@@ -25,7 +25,11 @@ export class JobCommandService {
       payload,
     });
     if (!created.duplicate && created.job.status === 'queued') {
-      await this.enqueueReliably(created.job.id, 'crawl_queue_enqueue_deferred');
+      await this.enqueueReliably(
+        created.job.id,
+        created.job.version,
+        'crawl_queue_enqueue_deferred',
+      );
     }
     return created;
   }
@@ -46,16 +50,23 @@ export class JobCommandService {
       context.correlationId,
       jobId,
     );
-    if (job) await this.enqueueReliably(job.id, 'crawl_retry_enqueue_deferred');
+    if (job) {
+      await this.enqueueReliably(job.id, job.version, 'crawl_retry_enqueue_deferred');
+    }
     return job;
   }
 
-  private async enqueueReliably(jobId: string, event: string): Promise<void> {
+  private async enqueueReliably(
+    jobId: string,
+    dispatchVersion: number,
+    event: string,
+  ): Promise<void> {
     try {
-      await enqueueCrawlJob(jobId);
+      await enqueueCrawlJob(jobId, dispatchVersion);
     } catch (error) {
       log('warn', event, {
         jobId,
+        dispatchVersion,
         error: error instanceof Error ? error.message : String(error),
       });
     }

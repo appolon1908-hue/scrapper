@@ -1,13 +1,18 @@
 import { Queue, type ConnectionOptions } from 'bullmq';
 import { config } from './config.js';
 
+export type CrawlQueuePayload = {
+  jobId: string;
+  dispatchVersion: number;
+};
+
 export const redisConnection = {
   url: config.redisUrl,
   maxRetriesPerRequest: null,
   enableReadyCheck: true,
 } satisfies ConnectionOptions;
 
-export const crawlQueue = new Queue<{ jobId: string }, unknown, 'crawl'>('scrapper-crawl-v2', {
+export const crawlQueue = new Queue<CrawlQueuePayload, unknown, 'crawl'>('scrapper-crawl-v2', {
   connection: redisConnection,
   defaultJobOptions: {
     attempts: 1,
@@ -17,9 +22,17 @@ export const crawlQueue = new Queue<{ jobId: string }, unknown, 'crawl'>('scrapp
   },
 });
 
-export async function enqueueCrawlJob(jobId: string): Promise<string> {
-  const queueId = `${jobId}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  const job = await crawlQueue.add('crawl', { jobId }, { jobId: queueId });
+export function crawlQueueJobId(jobId: string, dispatchVersion: number): string {
+  return `${jobId}-${dispatchVersion}`;
+}
+
+export async function enqueueCrawlJob(jobId: string, dispatchVersion: number): Promise<string> {
+  const queueId = crawlQueueJobId(jobId, dispatchVersion);
+  const job = await crawlQueue.add(
+    'crawl',
+    { jobId, dispatchVersion },
+    { jobId: queueId },
+  );
   return String(job.id);
 }
 
