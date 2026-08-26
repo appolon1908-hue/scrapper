@@ -1,0 +1,82 @@
+name: codestra-scrapper-gateway-validation
+
+services:
+  mock-api:
+    image: node:22-alpine
+    command:
+      - node
+      - -e
+      - |
+        require('http').createServer((request, response) => {
+          response.writeHead(200, {'content-type': 'application/json'});
+          response.end(JSON.stringify({status: 'ok', path: request.url}));
+        }).listen(8080, '0.0.0.0');
+    networks:
+      validation:
+        ipv4_address: 172.30.0.12
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  kong:
+    image: kong:3.9
+    environment:
+      KONG_DATABASE: 'off'
+      KONG_DECLARATIVE_CONFIG: /kong/kong.yml
+      KONG_PROXY_LISTEN: 0.0.0.0:8000
+      KONG_ADMIN_LISTEN: 'off'
+      KONG_STATUS_LISTEN: 0.0.0.0:8100
+      KONG_LOG_LEVEL: notice
+    volumes:
+      - ./kong.yml:/kong/kong.yml:ro
+    networks:
+      validation:
+        ipv4_address: 172.30.0.11
+    depends_on: [mock-api]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+      - /usr/local/kong:size=128m,mode=0755,uid=1000,gid=1000
+    healthcheck:
+      test: [CMD, kong, health]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  caddy:
+    image: caddy:2-alpine
+    command: [caddy, run, --config, /etc/caddy/Caddyfile]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./.certs:/certs:ro
+    ports:
+      - 127.0.0.1:8443:8443
+    networks:
+      validation:
+        ipv4_address: 172.30.0.10
+    depends_on:
+      kong:
+        condition: service_healthy
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /config:size=32m,mode=0700
+      - /data:size=32m,mode=0700
+      - /tmp:size=32m,mode=1777
+
+  attacker:
+    image: curlimages/curl:8.12.1
+    profiles: [attack]
+    command: [sleep, infinity]
+    networks:
+      validation:
+        ipv4_address: 172.30.0.20
+
+networks:
+  validation:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
