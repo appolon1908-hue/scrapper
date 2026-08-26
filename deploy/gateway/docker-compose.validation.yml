@@ -13,7 +13,7 @@ services:
         }).listen(8080, '0.0.0.0');
     networks:
       validation:
-        ipv4_address: 172.30.0.12
+        ipv4_address: 10.253.9.12
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
@@ -31,7 +31,7 @@ services:
       - ./kong.yml:/kong/kong.yml:ro
     networks:
       validation:
-        ipv4_address: 172.30.0.11
+        ipv4_address: 10.253.9.11
     depends_on: [mock-api]
     read_only: true
     cap_drop: [ALL]
@@ -55,7 +55,7 @@ services:
       - 127.0.0.1:8443:8443
     networks:
       validation:
-        ipv4_address: 172.30.0.10
+        ipv4_address: 10.253.9.10
     depends_on:
       kong:
         condition: service_healthy
@@ -73,10 +73,10 @@ services:
     command: [sleep, infinity]
     networks:
       validation:
-        ipv4_address: 172.30.0.20
+        ipv4_address: 10.253.9.20
 
 networks:
   validation:
     ipam:
       config:
-        - subnet: 172.30.0.0/24
+        - subnet: 10.253.9.0/24
