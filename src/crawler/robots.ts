@@ -100,7 +100,6 @@ export class RobotsCache {
         headersTimeout: 10_000,
         bodyTimeout: 10_000,
         signal: AbortSignal.timeout(15_000),
-        maxRedirections: 3,
       });
       if (response.statusCode === 401 || response.statusCode === 403) {
         await response.body.dump();

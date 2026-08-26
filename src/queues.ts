@@ -1,14 +1,14 @@
-import { Queue } from 'bullmq';
-import { Redis } from 'ioredis';
+import { Queue, type ConnectionOptions } from 'bullmq';
 import { config } from './config.js';
 
-export const redis = new Redis(config.redisUrl, {
+export const redisConnection = {
+  url: config.redisUrl,
   maxRetriesPerRequest: null,
   enableReadyCheck: true,
-});
+} satisfies ConnectionOptions;
 
-export const crawlQueue = new Queue<{ jobId: string }>('scrapper-crawl-v2', {
-  connection: redis,
+export const crawlQueue = new Queue<{ jobId: string }, unknown, 'crawl'>('scrapper-crawl-v2', {
+  connection: redisConnection,
   defaultJobOptions: {
     attempts: 1,
     backoff: { type: 'exponential', delay: 5_000 },
@@ -24,10 +24,9 @@ export async function enqueueCrawlJob(jobId: string): Promise<string> {
 }
 
 export async function pingRedis(): Promise<void> {
-  await redis.ping();
+  await crawlQueue.waitUntilReady();
 }
 
 export async function closeQueues(): Promise<void> {
   await crawlQueue.close();
-  await redis.quit();
 }

@@ -2,7 +2,6 @@ import { CheerioCrawler } from '@crawlee/cheerio';
 import { NonRetryableError, RequestQueue } from '@crawlee/core';
 import { PlaywrightCrawler } from '@crawlee/playwright';
 import type { Job } from 'bullmq';
-import type { CheerioAPI } from 'cheerio';
 import { config } from '../config.js';
 import { extractBusinessPage, type PageExtraction } from '../domain/extract.js';
 import { resolveBusinessRecord } from '../domain/entity-resolution.js';
@@ -29,7 +28,7 @@ class CrawlLimitError extends Error {
   }
 }
 
-type CrawlProgress = {
+export type CrawlProgress = {
   pagesProcessed: number;
   pagesFailed: number;
   pagesDeniedByRobots: number;
@@ -48,16 +47,10 @@ function keyForHost(hostname: string): string {
   return hostname.toLowerCase().replace(/^www\./, '');
 }
 
-function pageHtml($: CheerioAPI | undefined, body: string | Buffer | undefined): string {
-  if ($) return $.html();
+function pageHtml(serialize: () => string | null, body: string | Buffer | undefined): string {
+  const serialized = serialize();
+  if (serialized) return serialized;
   return typeof body === 'string' ? body : body?.toString('utf8') || '';
-}
-
-function priorityForUrl(url: string): number {
-  const path = new URL(url).pathname.toLowerCase();
-  if (/\b(contact|about|team|leadership|management|company|staff)\b/.test(path)) return 100;
-  if (/\b(services|locations|privacy|terms|legal)\b/.test(path)) return 50;
-  return 0;
 }
 
 async function ensureContinuable(
@@ -70,7 +63,7 @@ async function ensureContinuable(
 }
 
 export async function runCrawlJob(
-  bullJob: Job<{ jobId: string }>,
+  bullJob: Job<{ jobId: string }, unknown, 'crawl'>,
   repository = new Repository(),
 ): Promise<CrawlProgress> {
   const jobId = bullJob.data.jobId;
@@ -112,7 +105,6 @@ export async function runCrawlJob(
       url: normalized,
       uniqueKey: normalized,
       userData: { seedUrl: normalized, depth: 0, businessHost: host } satisfies UserData,
-      priority: 1000,
     });
   }
 
@@ -175,7 +167,7 @@ export async function runCrawlJob(
       if (!sameBusinessHost(userData.seedUrl, loadedUrl)) {
         throw new NonRetryableError('cross_domain_redirect_rejected');
       }
-      const html = pageHtml($, body);
+      const html = pageHtml(() => $.html(), body);
       if (!html) throw new NonRetryableError('empty_html');
       const extraction = extractBusinessPage(html, loadedUrl);
       await saveExtraction(extraction, userData, response?.statusCode);
@@ -208,7 +200,6 @@ export async function runCrawlJob(
                 depth: userData.depth + 1,
                 businessHost: userData.businessHost,
               } satisfies UserData;
-              next.priority = priorityForUrl(normalized);
               return next;
             } catch {
               return false;
@@ -241,7 +232,7 @@ export async function runCrawlJob(
       const browserQueue = await RequestQueue.open(`scrapper-browser-${runToken}`);
       const fallbackLimit = request.browser === 'playwright' ? request.maxPages : Math.max(1, Math.floor(request.maxPages * 0.25));
       for (const [url, userData] of [...browserFallbacks.entries()].slice(0, fallbackLimit)) {
-        await browserQueue.addRequest({ url, uniqueKey: `${url}#browser`, userData, priority: 100 });
+        await browserQueue.addRequest({ url, uniqueKey: `${url}#browser`, userData });
       }
       const browserCrawler = new PlaywrightCrawler({
         requestQueue: browserQueue,

@@ -2,14 +2,14 @@ import { Worker } from 'bullmq';
 import { config } from '../config.js';
 import { log } from '../log.js';
 import { Repository } from '../persistence/repository.js';
-import { crawlQueue, enqueueCrawlJob, redis } from '../queues.js';
-import { runCrawlJob } from '../crawler/run.js';
+import { crawlQueue, enqueueCrawlJob, redisConnection } from '../queues.js';
+import { runCrawlJob, type CrawlProgress } from '../crawler/run.js';
 
 export async function startCrawlWorker(repository = new Repository()): Promise<() => Promise<void>> {
-  const worker = new Worker<{ jobId: string }>(
+  const worker = new Worker<{ jobId: string }, CrawlProgress, 'crawl'>(
     'scrapper-crawl-v2',
     async (job) => runCrawlJob(job, repository),
-    { connection: redis, concurrency: config.jobConcurrency },
+    { connection: redisConnection, concurrency: config.jobConcurrency },
   );
   worker.on('completed', (job) => log('info', 'crawl_job_worker_completed', { queueJobId: job.id }));
   worker.on('failed', (job, error) =>

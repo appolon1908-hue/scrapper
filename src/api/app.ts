@@ -90,7 +90,12 @@ export async function buildApp(repository = new Repository()): Promise<FastifyIn
   });
 
   app.setErrorHandler(async (error, request, reply) => {
-    const message = error.message || 'internal_error';
+    const message =
+      error instanceof Error && error.message
+        ? error.message
+        : typeof error === 'string' && error
+          ? error
+          : 'internal_error';
     if (message === 'idempotency_conflict') {
       await reply.code(409).send({ error: message });
       return;
@@ -211,7 +216,7 @@ export async function buildApp(repository = new Repository()): Promise<FastifyIn
     const id = String((request.params as { id: string }).id);
     const job = await repository.requestCancellation(
       request.principal.tenantId,
-      request.principal.clientId,
+      requestedBy: request.principal.clientId,
       correlationId,
       id,
     );
