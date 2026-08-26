@@ -1,0 +1,97 @@
+name: Apply validated production-readiness changes
+
+on:
+  push:
+    branches:
+      - release/production-readiness-20260826
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: scrapper
+          POSTGRES_PASSWORD: scrapper
+          POSTGRES_DB: scrapper
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U scrapper -d scrapper"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.4-alpine
+        ports: [6379:6379]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://scrapper:scrapper@127.0.0.1:5432/scrapper
+      REDIS_URL: redis://127.0.0.1:6379
+      SERVICE_PRINCIPALS_FILE: test/fixtures-service-principals.json
+      EIN_FINGERPRINT_PEPPER: integration-test-pepper
+      MIGRATION_ALLOW_DOWN: 'true'
+      JOB_LEASE_SECONDS: '30'
+      OUTBOX_LEASE_SECONDS: '30'
+      DELIVERY_MAX_ATTEMPTS: '2'
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+          cache: npm
+
+      - name: Verify and apply staged source bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .release-bundle/part-* > /tmp/production-readiness.tar.gz.b64
+          base64 --decode /tmp/production-readiness.tar.gz.b64 > /tmp/production-readiness.tar.gz
+          echo "44e673b4d41d13aedd35912e72fdba61d69db11fdfea9fa4bade4cd9c385fc09  /tmp/production-readiness.tar.gz" | sha256sum --check -
+          tar -tzf /tmp/production-readiness.tar.gz > /tmp/production-readiness-files.txt
+          tar -xzf /tmp/production-readiness.tar.gz -C "$GITHUB_WORKSPACE"
+          chmod +x scripts/release/*.sh
+
+      - name: Install locked dependencies
+        run: npm ci --include=dev --ignore-scripts --no-audit --no-fund
+
+      - name: Format changed source and configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(grep -E '\.(ts|mjs|json|ya?ml|md)$' /tmp/production-readiness-files.txt)
+          npx prettier --write "${files[@]}"
+
+      - name: Validate source, unit tests and architecture
+        run: npm run check
+
+      - name: Exercise real PostgreSQL, Redis, migration rollback and delivery replay
+        run: npm run test:integration
+
+      - name: Validate gateway TLS and policy controls
+        run: ./scripts/release/validate-gateway.sh
+
+      - name: Commit validated application changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .release-bundle deploy/gateway/ci/certs
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: add runtime release gates and fenced delivery"
+          git push origin HEAD:${GITHUB_REF_NAME}
