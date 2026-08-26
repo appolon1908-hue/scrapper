@@ -27,6 +27,7 @@ services:
       KONG_ADMIN_LISTEN: 'off'
       KONG_STATUS_LISTEN: 0.0.0.0:8100
       KONG_LOG_LEVEL: notice
+      KONG_PREFIX: /tmp/kong
     volumes:
       - ./kong.yml:/kong/kong.yml:ro
     networks:
@@ -38,7 +39,6 @@ services:
     security_opt: [no-new-privileges:true]
     tmpfs:
       - /tmp:size=128m,mode=1777
-      - /usr/local/kong:size=128m,mode=1777
     healthcheck:
       test: [CMD, kong, health]
       interval: 5s
