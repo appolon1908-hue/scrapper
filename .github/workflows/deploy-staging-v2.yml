@@ -1,0 +1,158 @@
+name: Deploy write-disabled staging (v2)
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_ref:
+        description: Immutable GHCR image reference ending in @sha256:<digest>
+        required: true
+        type: string
+      release_sha:
+        description: Reviewed source SHA represented by the image
+        required: true
+        type: string
+      previous_image_ref:
+        description: Previous immutable image for rollback testing
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate immutable inputs
+        env:
+          IMAGE_REF: ${{ inputs.image_ref }}
+          PREVIOUS_IMAGE_REF: ${{ inputs.previous_image_ref }}
+        run: |
+          [[ "$IMAGE_REF" =~ @sha256:[a-f0-9]{64}$ ]]
+          [[ "$PREVIOUS_IMAGE_REF" =~ @sha256:[a-f0-9]{64}$ ]]
+
+      - name: Configure SSH trust
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.STAGING_SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 0700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 0600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 0600 ~/.ssh/known_hosts
+
+      - name: Upload reviewed deployment files
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_ROOT: ${{ vars.STAGING_ROOT || '/opt/codestra-scrapper/staging' }}
+        run: |
+          tar -czf /tmp/staging-deploy.tgz \
+            docker-compose.yml deploy scripts/no-write-canary.mjs \
+            scripts/deploy-staging.sh scripts/rollback-staging.sh
+          ssh "$STAGING_USER@$STAGING_HOST" "mkdir -p '$STAGING_ROOT'"
+          scp /tmp/staging-deploy.tgz "$STAGING_USER@$STAGING_HOST:$STAGING_ROOT/"
+          ssh "$STAGING_USER@$STAGING_HOST" \
+            "cd '$STAGING_ROOT' && tar -xzf staging-deploy.tgz && rm staging-deploy.tgz"
+
+      - name: Install staging environment and canary credentials
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_ROOT: ${{ vars.STAGING_ROOT || '/opt/codestra-scrapper/staging' }}
+          STAGING_ENV_CONTENT: ${{ secrets.STAGING_ENV_CONTENT }}
+          CANARY_TOKEN: ${{ secrets.STAGING_CANARY_TOKEN }}
+          CANARY_TENANT_ID: ${{ secrets.STAGING_CANARY_TENANT_ID }}
+          CANARY_API_BASE: ${{ vars.STAGING_CANARY_API_BASE }}
+          CANARY_SEED_URL: ${{ vars.STAGING_CANARY_SEED_URL || 'https://example.com' }}
+          IMAGE_REF: ${{ inputs.image_ref }}
+        run: |
+          {
+            printf '%s\n' "$STAGING_ENV_CONTENT"
+            printf 'SCRAPPER_IMAGE=%s\n' "$IMAGE_REF"
+            printf 'ENABLE_EXTERNAL_DELIVERY=false\n'
+            printf 'ENABLE_REGISTRY_ENRICHMENT=false\n'
+          } | ssh "$STAGING_USER@$STAGING_HOST" \
+            "umask 077; cat > '$STAGING_ROOT/deploy/staging.env'"
+          {
+            printf 'CANARY_TOKEN=%q\n' "$CANARY_TOKEN"
+            printf 'CANARY_TENANT_ID=%q\n' "$CANARY_TENANT_ID"
+            printf 'CANARY_API_BASE=%q\n' "$CANARY_API_BASE"
+            printf 'CANARY_SEED_URL=%q\n' "$CANARY_SEED_URL"
+          } | ssh "$STAGING_USER@$STAGING_HOST" \
+            "umask 077; cat > '$STAGING_ROOT/.canary.env'"
+
+      - name: Deploy candidate with writes disabled
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_ROOT: ${{ vars.STAGING_ROOT || '/opt/codestra-scrapper/staging' }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" bash -s -- "$STAGING_ROOT" "$RELEASE_SHA" <<'REMOTE'
+          set -euo pipefail
+          root="$1"
+          release_sha="$2"
+          cd "$root"
+          set -a
+          source .canary.env
+          set +a
+          DEPLOY_ENV_FILE=deploy/staging.env \
+          EVIDENCE_DIR=release-evidence/staging \
+          RELEASE_SHA="$release_sha" \
+            bash scripts/deploy-staging.sh
+          REMOTE
+
+      - name: Exercise rollback and restore candidate
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_ROOT: ${{ vars.STAGING_ROOT || '/opt/codestra-scrapper/staging' }}
+          PREVIOUS_IMAGE_REF: ${{ inputs.previous_image_ref }}
+          IMAGE_REF: ${{ inputs.image_ref }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" bash -s -- \
+            "$STAGING_ROOT" "$PREVIOUS_IMAGE_REF" "$IMAGE_REF" "$RELEASE_SHA" <<'REMOTE'
+          set -euo pipefail
+          root="$1"
+          previous="$2"
+          candidate="$3"
+          release_sha="$4"
+          cd "$root"
+          set -a
+          source .canary.env
+          set +a
+          PREVIOUS_SCRAPPER_IMAGE="$previous" \
+          DEPLOY_ENV_FILE=deploy/staging.env \
+          EVIDENCE_DIR=release-evidence/rollback \
+            bash scripts/rollback-staging.sh
+          sed -i "s#^SCRAPPER_IMAGE=.*#SCRAPPER_IMAGE=$candidate#" deploy/staging.env
+          DEPLOY_ENV_FILE=deploy/staging.env \
+          EVIDENCE_DIR=release-evidence/restored-candidate \
+          RELEASE_SHA="$release_sha" \
+            bash scripts/deploy-staging.sh
+          rm -f .canary.env
+          REMOTE
+
+      - name: Download staging and rollback evidence
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_ROOT: ${{ vars.STAGING_ROOT || '/opt/codestra-scrapper/staging' }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" \
+            "cd '$STAGING_ROOT' && tar -czf /tmp/scrapper-release-evidence.tgz release-evidence"
+          scp "$STAGING_USER@$STAGING_HOST:/tmp/scrapper-release-evidence.tgz" ./
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: staging-evidence-${{ inputs.release_sha }}
+          path: scrapper-release-evidence.tgz
+          if-no-files-found: error
+          retention-days: 30
