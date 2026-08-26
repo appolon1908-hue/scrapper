@@ -9,6 +9,7 @@ on:
       - 'integration/**'
       - 'hardening/**'
       - 'refactor/**'
+      - 'release/**'
       - 'ops/**'
 
 permissions:
@@ -21,10 +22,35 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+        env:
+          POSTGRES_USER: scrapper
+          POSTGRES_PASSWORD: scrapper
+          POSTGRES_DB: scrapper
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U scrapper -d scrapper"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7.4-alpine@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
       NODE_ENV: test
+      DATABASE_URL: postgresql://scrapper:scrapper@127.0.0.1:5432/scrapper
+      REDIS_URL: redis://127.0.0.1:6379
       SERVICE_PRINCIPALS_FILE: test/fixtures-service-principals.json
       EIN_FINGERPRINT_PEPPER: test-only-pepper
     steps:
@@ -38,15 +64,22 @@ jobs:
       - name: Install locked dependencies
         run: npm ci --include=dev --ignore-scripts --no-audit --no-fund
 
-      - name: Validate source, contract, tests and formatting
-        run: npm run check
+      - name: Lint, typecheck, build and unit contracts
+        run: |
+          npm run lint
+          npm run typecheck
+          npm run build
+          node --test test/unit-*.test.mjs
+
+      - name: Run real PostgreSQL, Redis, migration and replay tests
+        run: npm run test:integration
 
       - name: Build production container
         run: docker build --tag codestra-scrapper:ci .
 
       - name: Validate Compose deployment model
         env:
-          SCRAPPER_IMAGE: ghcr.io/codestra/scrapper@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          SCRAPPER_IMAGE: ghcr.io/appolon1908-hue/scrapper@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
           SCRAPPER_ENV_FILE: /dev/null
           DATABASE_URL_FILE: .ci/database_url
           POSTGRES_PASSWORD_FILE: .ci/postgres_password

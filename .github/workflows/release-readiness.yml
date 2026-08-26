@@ -1,0 +1,291 @@
+name: Release readiness
+
+on:
+  push:
+    branches:
+      - 'release/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+env:
+  IMAGE_NAME: ghcr.io/appolon1908-hue/scrapper
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+        env:
+          POSTGRES_USER: scrapper
+          POSTGRES_PASSWORD: scrapper
+          POSTGRES_DB: scrapper
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U scrapper -d scrapper"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7.4-alpine@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
+        ports: [6379:6379]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      NODE_ENV: test
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      DATABASE_URL: postgresql://scrapper:scrapper@127.0.0.1:5432/scrapper
+      REDIS_URL: redis://127.0.0.1:6379
+      SERVICE_PRINCIPALS_FILE: test/fixtures-service-principals.json
+      EIN_FINGERPRINT_PEPPER: release-test-pepper
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+          cache: npm
+      - run: npm ci --include=dev --ignore-scripts --no-audit --no-fund
+      - name: Verify source and unit contracts
+        run: |
+          npm run lint
+          npm run typecheck
+          npm run build
+          node --test test/unit-*.test.mjs
+      - name: Verify PostgreSQL Redis migrations leases and replay
+        run: npm run test:integration
+
+  branch-governance:
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Require protected release branch
+        run: |
+          encoded_branch="$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["GITHUB_REF_NAME"], safe=""))')"
+          protected="$(gh api "repos/${GITHUB_REPOSITORY}/branches/${encoded_branch}" --jq '.protected')"
+          if [[ "${protected}" != 'true' ]]; then
+            echo "Release blocked: ${GITHUB_REF_NAME} is not protected." >&2
+            echo 'Run Configure release branch protection with RELEASE_ADMIN_TOKEN, then rerun this workflow.' >&2
+            exit 1
+          fi
+
+  gateway-validation:
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Caddy and Kong controls
+        run: |
+          chmod +x scripts/validate-gateway.sh
+          scripts/validate-gateway.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gateway-evidence-${{ github.sha }}
+          path: release-evidence
+          if-no-files-found: warn
+
+  publish:
+    needs: [verify, branch-governance]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      image: ${{ steps.identity.outputs.reference }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish release image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Record immutable reference
+        id: identity
+        run: echo "reference=${IMAGE_NAME}@${{ steps.build.outputs.digest }}" >> "${GITHUB_OUTPUT}"
+      - uses: sigstore/cosign-installer@v3
+      - name: Sign immutable image digest
+        run: cosign sign --yes '${{ steps.identity.outputs.reference }}'
+      - name: Attest published image
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Scan published image
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: ${{ steps.identity.outputs.reference }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+      - name: Write release identity
+        run: |
+          mkdir -p release-evidence
+          cat > release-evidence/image.json <<EOF
+          {
+            "repository": "${GITHUB_REPOSITORY}",
+            "commit": "${GITHUB_SHA}",
+            "image": "${IMAGE_NAME}",
+            "digest": "${{ steps.build.outputs.digest }}",
+            "immutable_reference": "${{ steps.identity.outputs.reference }}",
+            "signed": true,
+            "provenance_attested": true,
+            "sbom_requested": true,
+            "production_activated": false
+          }
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image-identity-${{ github.sha }}
+          path: release-evidence/image.json
+          if-no-files-found: error
+
+  ephemeral-staging:
+    needs: [publish, gateway-validation]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: 70a99ca9ea29041fa1d5cbab965dc0e400723ba0
+          path: rollback-source
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Deploy immutable image with writes disabled and exercise rollback
+        run: |
+          chmod +x scripts/staging-canary.sh
+          scripts/staging-canary.sh '${{ needs.publish.outputs.image }}' rollback-source
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: staging-and-rollback-evidence-${{ github.sha }}
+          path: release-evidence
+          if-no-files-found: warn
+
+  remote-staging:
+    needs: [publish, ephemeral-staging]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    outputs:
+      deployed: ${{ steps.deploy.outputs.deployed }}
+    env:
+      STAGING_HOST: ${{ secrets.SCRAPPER_STAGING_HOST }}
+      STAGING_USER: ${{ secrets.SCRAPPER_STAGING_USER }}
+      STAGING_SSH_KEY: ${{ secrets.SCRAPPER_STAGING_SSH_KEY }}
+      STAGING_PATH: ${{ secrets.SCRAPPER_STAGING_PATH }}
+      STAGING_URL: ${{ secrets.SCRAPPER_STAGING_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to configured remote staging host
+        id: deploy
+        run: |
+          mkdir -p release-evidence ~/.ssh
+          if [[ -z "${STAGING_HOST}" || -z "${STAGING_USER}" || -z "${STAGING_SSH_KEY}" || -z "${STAGING_URL}" ]]; then
+            echo 'deployed=false' >> "${GITHUB_OUTPUT}"
+            cat > release-evidence/remote-staging.json <<EOF
+          {"status":"skipped","reason":"required staging SSH or URL secrets are not configured","production_activated":false}
+          EOF
+            exit 0
+          fi
+
+          printf '%s\n' "${STAGING_SSH_KEY}" > ~/.ssh/id_ed25519
+          chmod 0600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${STAGING_HOST}" >> ~/.ssh/known_hosts
+          export DEPLOY_PATH="${STAGING_PATH:-/opt/codestra/scrapper-staging}"
+          tar -czf /tmp/scrapper-deploy.tgz docker-compose.yml
+          scp /tmp/scrapper-deploy.tgz "${STAGING_USER}@${STAGING_HOST}:/tmp/scrapper-deploy.tgz"
+          printf '%s' '${{ secrets.GITHUB_TOKEN }}' | ssh "${STAGING_USER}@${STAGING_HOST}" \
+            "docker login ghcr.io -u '${{ github.actor }}' --password-stdin"
+          ssh "${STAGING_USER}@${STAGING_HOST}" bash -s -- \
+            "${DEPLOY_PATH}" '${{ needs.publish.outputs.image }}' <<'REMOTE'
+          set -euo pipefail
+          DEPLOY_PATH="$1"
+          IMAGE="$2"
+          mkdir -p "${DEPLOY_PATH}"
+          tar -xzf /tmp/scrapper-deploy.tgz -C "${DEPLOY_PATH}"
+          cd "${DEPLOY_PATH}"
+          test -f /etc/codestra/scrapper/staging.env
+          grep -Eq '^ENABLE_EXTERNAL_DELIVERY=false$' /etc/codestra/scrapper/staging.env
+          test -d /etc/codestra/scrapper/secrets
+          previous=''
+          [[ -f .current_image ]] && previous="$(cat .current_image)"
+          printf '%s' "${previous}" > .previous_image
+          export SCRAPPER_IMAGE="${IMAGE}"
+          export SCRAPPER_ENV_FILE=/etc/codestra/scrapper/staging.env
+          export DATABASE_URL_FILE=/etc/codestra/scrapper/secrets/database_url
+          export POSTGRES_PASSWORD_FILE=/etc/codestra/scrapper/secrets/postgres_password
+          export SERVICE_PRINCIPALS_FILE=/etc/codestra/scrapper/secrets/service_principals.json
+          export EIN_FINGERPRINT_PEPPER_FILE=/etc/codestra/scrapper/secrets/ein_fingerprint_pepper
+          export OUTBOUND_HMAC_SECRET_FILE=/etc/codestra/scrapper/secrets/outbound_hmac
+          export OUTBOUND_BEARER_TOKEN_FILE=/etc/codestra/scrapper/secrets/middleware_token
+          export OUTBOUND_CA_FILE=/etc/codestra/scrapper/secrets/middleware_ca
+          export OUTBOUND_CLIENT_CERT_FILE=/etc/codestra/scrapper/secrets/client_cert
+          export OUTBOUND_CLIENT_KEY_FILE=/etc/codestra/scrapper/secrets/client_key
+          docker compose pull
+          docker compose up -d postgres redis
+          docker compose run --rm migrate
+          docker compose up -d --no-deps api crawl-worker delivery-worker
+          ready='false'
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3200/readyz >/dev/null; then ready='true'; break; fi
+            sleep 1
+          done
+          if [[ "${ready}" != 'true' ]]; then
+            docker compose stop api crawl-worker delivery-worker || true
+            docker compose run --rm migrate node dist/migrate-down.js || true
+            if [[ -n "${previous}" ]]; then
+              export SCRAPPER_IMAGE="${previous}"
+              docker compose up -d --no-deps api crawl-worker delivery-worker
+            fi
+            exit 1
+          fi
+          printf '%s' "${IMAGE}" > .current_image
+          REMOTE
+
+          curl --fail --silent --show-error "${STAGING_URL%/}/readyz" >/dev/null
+          echo 'deployed=true' >> "${GITHUB_OUTPUT}"
+          cat > release-evidence/remote-staging.json <<EOF
+          {"status":"deployed","host":"${STAGING_HOST}","url":"${STAGING_URL}","image":"${{ needs.publish.outputs.image }}","external_delivery_enabled":false,"production_activated":false}
+          EOF
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: remote-staging-evidence-${{ github.sha }}
+          path: release-evidence
+          if-no-files-found: warn

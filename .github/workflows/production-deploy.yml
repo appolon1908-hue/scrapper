@@ -1,0 +1,176 @@
+name: Production deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: 'Reviewed 40-character commit SHA from the protected release branch'
+        required: true
+        type: string
+      image_digest:
+        description: 'Published immutable sha256 image digest'
+        required: true
+        type: string
+      approval:
+        description: 'Enter DEPLOY followed by one space and the exact image digest'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+  attestations: read
+  id-token: write
+
+env:
+  IMAGE_NAME: ghcr.io/appolon1908-hue/scrapper
+  RELEASE_BRANCH: release/production-readiness-20260826
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: production
+    outputs:
+      image: ${{ steps.validate.outputs.image }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate digest-bound approval and protected release SHA
+        id: validate
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+          APPROVAL: ${{ inputs.approval }}
+        run: |
+          [[ "${RELEASE_SHA}" =~ ^[a-f0-9]{40}$ ]]
+          [[ "${IMAGE_DIGEST}" =~ ^sha256:[a-f0-9]{64}$ ]]
+          [[ "${APPROVAL}" == "DEPLOY ${IMAGE_DIGEST}" ]]
+          encoded_branch="$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["RELEASE_BRANCH"], safe=""))')"
+          branch_json="$(gh api "repos/${GITHUB_REPOSITORY}/branches/${encoded_branch}")"
+          protected="$(jq -r '.protected' <<<"${branch_json}")"
+          branch_sha="$(jq -r '.commit.sha' <<<"${branch_json}")"
+          [[ "${protected}" == 'true' ]]
+          [[ "${branch_sha}" == "${RELEASE_SHA}" ]]
+          echo "image=${IMAGE_NAME}@${IMAGE_DIGEST}" >> "${GITHUB_OUTPUT}"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: sigstore/cosign-installer@v3
+      - name: Verify image revision, signature and GitHub attestation
+        env:
+          IMAGE: ${{ steps.validate.outputs.image }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          docker pull "${IMAGE}"
+          revision="$(docker image inspect "${IMAGE}" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+          [[ "${revision}" == "${RELEASE_SHA}" ]]
+          cosign verify \
+            --certificate-identity-regexp "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release-readiness.yml@.*" \
+            --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+            "${IMAGE}" >/dev/null
+          gh attestation verify "oci://${IMAGE}" --repo "${GITHUB_REPOSITORY}"
+
+  deploy:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production
+    env:
+      PRODUCTION_HOST: ${{ secrets.SCRAPPER_PRODUCTION_HOST }}
+      PRODUCTION_USER: ${{ secrets.SCRAPPER_PRODUCTION_USER }}
+      PRODUCTION_SSH_KEY: ${{ secrets.SCRAPPER_PRODUCTION_SSH_KEY }}
+      PRODUCTION_PATH: ${{ secrets.SCRAPPER_PRODUCTION_PATH }}
+      PRODUCTION_URL: ${{ secrets.SCRAPPER_PRODUCTION_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require production deployment secrets
+        run: |
+          [[ -n "${PRODUCTION_HOST}" ]]
+          [[ -n "${PRODUCTION_USER}" ]]
+          [[ -n "${PRODUCTION_SSH_KEY}" ]]
+          [[ -n "${PRODUCTION_URL}" ]]
+      - name: Deploy approved immutable image with external delivery disabled
+        env:
+          IMAGE: ${{ needs.preflight.outputs.image }}
+        run: |
+          mkdir -p ~/.ssh release-evidence
+          printf '%s\n' "${PRODUCTION_SSH_KEY}" > ~/.ssh/id_ed25519
+          chmod 0600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${PRODUCTION_HOST}" >> ~/.ssh/known_hosts
+          export DEPLOY_PATH="${PRODUCTION_PATH:-/opt/codestra/scrapper-production}"
+          tar -czf /tmp/scrapper-production.tgz docker-compose.yml
+          scp /tmp/scrapper-production.tgz "${PRODUCTION_USER}@${PRODUCTION_HOST}:/tmp/scrapper-production.tgz"
+          printf '%s' '${{ secrets.GITHUB_TOKEN }}' | ssh "${PRODUCTION_USER}@${PRODUCTION_HOST}" \
+            "docker login ghcr.io -u '${{ github.actor }}' --password-stdin"
+          ssh "${PRODUCTION_USER}@${PRODUCTION_HOST}" bash -s -- \
+            "${DEPLOY_PATH}" "${IMAGE}" <<'REMOTE'
+          set -euo pipefail
+          DEPLOY_PATH="$1"
+          IMAGE="$2"
+          mkdir -p "${DEPLOY_PATH}/backups"
+          tar -xzf /tmp/scrapper-production.tgz -C "${DEPLOY_PATH}"
+          cd "${DEPLOY_PATH}"
+          test -f /etc/codestra/scrapper/production.env
+          grep -Eq '^ENABLE_EXTERNAL_DELIVERY=false$' /etc/codestra/scrapper/production.env
+          test -d /etc/codestra/scrapper/secrets
+          previous=''
+          [[ -f .current_image ]] && previous="$(cat .current_image)"
+          printf '%s' "${previous}" > .previous_image
+          export SCRAPPER_IMAGE="${IMAGE}"
+          export SCRAPPER_ENV_FILE=/etc/codestra/scrapper/production.env
+          export DATABASE_URL_FILE=/etc/codestra/scrapper/secrets/database_url
+          export POSTGRES_PASSWORD_FILE=/etc/codestra/scrapper/secrets/postgres_password
+          export SERVICE_PRINCIPALS_FILE=/etc/codestra/scrapper/secrets/service_principals.json
+          export EIN_FINGERPRINT_PEPPER_FILE=/etc/codestra/scrapper/secrets/ein_fingerprint_pepper
+          export OUTBOUND_HMAC_SECRET_FILE=/etc/codestra/scrapper/secrets/outbound_hmac
+          export OUTBOUND_BEARER_TOKEN_FILE=/etc/codestra/scrapper/secrets/middleware_token
+          export OUTBOUND_CA_FILE=/etc/codestra/scrapper/secrets/middleware_ca
+          export OUTBOUND_CLIENT_CERT_FILE=/etc/codestra/scrapper/secrets/client_cert
+          export OUTBOUND_CLIENT_KEY_FILE=/etc/codestra/scrapper/secrets/client_key
+          docker compose pull
+          docker compose up -d postgres redis
+          timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          docker compose exec -T postgres pg_dump -U scrapper -d scrapper -Fc \
+            > "backups/predeploy-${timestamp}.dump"
+          docker compose run --rm migrate
+          docker compose up -d --no-deps api crawl-worker delivery-worker
+          ready='false'
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3200/readyz >/dev/null; then ready='true'; break; fi
+            sleep 1
+          done
+          if [[ "${ready}" != 'true' ]]; then
+            docker compose stop api crawl-worker delivery-worker || true
+            docker compose run --rm migrate node dist/migrate-down.js || true
+            if [[ -n "${previous}" ]]; then
+              export SCRAPPER_IMAGE="${previous}"
+              docker compose up -d --no-deps api crawl-worker delivery-worker
+            fi
+            exit 1
+          fi
+          printf '%s' "${IMAGE}" > .current_image
+          REMOTE
+          cat > release-evidence/production-deployment.json <<EOF
+          {
+            "release_sha": "${{ inputs.release_sha }}",
+            "image": "${IMAGE}",
+            "approved_by": "${GITHUB_ACTOR}",
+            "approval": "digest-bound",
+            "host": "${PRODUCTION_HOST}",
+            "url": "${PRODUCTION_URL}",
+            "external_delivery_enabled": false,
+            "deployed": true
+          }
+          EOF
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-deployment-evidence-${{ inputs.release_sha }}
+          path: release-evidence
+          if-no-files-found: warn
