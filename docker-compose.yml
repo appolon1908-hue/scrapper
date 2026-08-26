@@ -22,6 +22,10 @@ services:
     <<: *app
     restart: 'no'
     command: [node, dist/migrate.js]
+    environment:
+      DATABASE_URL_FILE: /run/secrets/database_url
+      REDIS_URL: redis://redis:6379
+      ROLE: migrate
     depends_on:
       postgres: { condition: service_healthy }
 
