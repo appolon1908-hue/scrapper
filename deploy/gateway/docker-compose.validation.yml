@@ -68,7 +68,7 @@ services:
     tmpfs:
       - /config:size=32m,mode=0700
       - /data:size=32m,mode=0700
-      - /tmp:size=32m,mode=1777
+      - /tmp:size=64m,mode=1777
 
   attacker:
     image: curlimages/curl:8.12.1
