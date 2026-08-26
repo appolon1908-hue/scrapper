@@ -9,7 +9,14 @@ EVIDENCE_DIR="${ROOT_DIR}/release-evidence"
 
 capture_logs() {
   mkdir -p "${EVIDENCE_DIR}"
+  "${COMPOSE[@]}" ps --all > "${EVIDENCE_DIR}/gateway-compose-ps.txt" 2>&1 || true
   "${COMPOSE[@]}" logs --no-color > "${EVIDENCE_DIR}/gateway-compose.log" 2>&1 || true
+}
+
+show_failure() {
+  capture_logs
+  cat "${EVIDENCE_DIR}/gateway-compose-ps.txt" >&2 || true
+  cat "${EVIDENCE_DIR}/gateway-compose.log" >&2 || true
 }
 
 cleanup() {
@@ -50,8 +57,42 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj '/CN=rogue-client' \
   -keyout "${CERT_DIR}/rogue.key" -out "${CERT_DIR}/rogue.crt" >/dev/null 2>&1
 chmod 0644 "${CERT_DIR}"/*.crt
 chmod 0600 "${CERT_DIR}"/*.key
+# This is an ephemeral CI-only server key mounted read-only into a capability-dropped
+# Caddy container. It must be readable by the image's unprivileged runtime user.
+chmod 0644 "${CERT_DIR}/server.key"
 
-"${COMPOSE[@]}" up -d mock-api kong caddy
+"${COMPOSE[@]}" config --quiet
+if ! "${COMPOSE[@]}" run --rm --no-deps kong kong config parse /kong/kong.yml; then
+  echo 'ERROR: Kong declarative configuration is invalid' >&2
+  show_failure
+  exit 1
+fi
+
+if ! "${COMPOSE[@]}" up -d mock-api kong; then
+  echo 'ERROR: Kong validation services did not start' >&2
+  show_failure
+  exit 1
+fi
+
+kong_ready=false
+for _ in $(seq 1 60); do
+  if "${COMPOSE[@]}" exec -T kong kong health >/dev/null 2>&1; then
+    kong_ready=true
+    break
+  fi
+  sleep 1
+done
+if [[ "$kong_ready" != "true" ]]; then
+  echo 'ERROR: Kong failed its health check' >&2
+  show_failure
+  exit 1
+fi
+
+if ! "${COMPOSE[@]}" up -d caddy; then
+  echo 'ERROR: Caddy validation service did not start' >&2
+  show_failure
+  exit 1
+fi
 
 ready='false'
 for _ in $(seq 1 60); do
@@ -66,7 +107,11 @@ for _ in $(seq 1 60); do
   fi
   sleep 1
 done
-[[ "${ready}" == 'true' ]]
+if [[ "$ready" != 'true' ]]; then
+  echo 'ERROR: mTLS gateway did not become ready' >&2
+  show_failure
+  exit 1
+fi
 
 if curl --silent --insecure --max-time 3 \
   https://localhost:8443/api/v2/health >/dev/null 2>&1; then
@@ -135,8 +180,12 @@ attacker_status="$("${COMPOSE[@]}" run --rm --no-deps attacker \
   http://kong:8000/api/v2/health)"
 [[ "${attacker_status}" == '403' ]]
 
-if "${COMPOSE[@]}" port kong 8000 | grep -q .; then
-  echo 'ERROR: Kong proxy port is published to the host' >&2
+kong_id="$("${COMPOSE[@]}" ps -q kong)"
+[[ -n "$kong_id" ]]
+port_bindings="$(docker inspect "$kong_id" --format '{{json .HostConfig.PortBindings}}')"
+if jq -e 'to_entries | any(.value != null and (.value | length) > 0)' \
+  <<<"$port_bindings" >/dev/null; then
+  echo 'ERROR: Kong has one or more host-published ports' >&2
   exit 1
 fi
 

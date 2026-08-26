@@ -1,0 +1,174 @@
+name: Runtime path inventory (read only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Runtime environment to inspect
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      runtime_root:
+        description: Existing application runtime root to inspect
+        required: true
+        type: string
+      runtime_env_file:
+        description: Existing externally managed environment file
+        required: true
+        type: string
+      runtime_secrets_root:
+        description: Existing directory containing mounted runtime secrets
+        required: true
+        type: string
+      expected_api_port:
+        description: Expected loopback API port
+        required: true
+        default: '3200'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runtime-inventory-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: ${{ format('{0}-runtime-audit', inputs.target) }}
+    env:
+      RUNTIME_HOST: ${{ secrets.RUNTIME_AUDIT_HOST }}
+      RUNTIME_USER: ${{ secrets.RUNTIME_AUDIT_USER }}
+      RUNTIME_SSH_KEY: ${{ secrets.RUNTIME_AUDIT_SSH_KEY }}
+      RUNTIME_KNOWN_HOSTS: ${{ secrets.RUNTIME_AUDIT_KNOWN_HOSTS }}
+      RUNTIME_SSH_PORT: ${{ vars.RUNTIME_AUDIT_SSH_PORT || '22' }}
+      RUNTIME_ROOT: ${{ inputs.runtime_root }}
+      RUNTIME_ENV_FILE: ${{ inputs.runtime_env_file }}
+      RUNTIME_SECRETS_ROOT: ${{ inputs.runtime_secrets_root }}
+      EXPECTED_API_PORT: ${{ inputs.expected_api_port }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Validate read-only audit inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          for value in RUNTIME_HOST RUNTIME_USER RUNTIME_SSH_KEY RUNTIME_KNOWN_HOSTS; do
+            [[ -n "${!value:-}" ]] || { echo "ERROR=MISSING_${value}" >&2; exit 1; }
+          done
+          [[ "$RUNTIME_USER" =~ ^[A-Za-z0-9._-]+$ ]]
+          [[ "$RUNTIME_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          for path in "$RUNTIME_ROOT" "$RUNTIME_ENV_FILE" "$RUNTIME_SECRETS_ROOT"; do
+            [[ "$path" =~ ^/[A-Za-z0-9._/-]+$ ]]
+            [[ "$path" != "/" && "$path" != *"//"* && "$path" != *"/../"* && "$path" != *"/./"* ]]
+          done
+          [[ "$EXPECTED_API_PORT" =~ ^[0-9]{1,5}$ ]]
+          (( EXPECTED_API_PORT >= 1 && EXPECTED_API_PORT <= 65535 ))
+          [[ "$RUNTIME_SSH_PORT" =~ ^[0-9]{1,5}$ ]]
+          (( RUNTIME_SSH_PORT >= 1 && RUNTIME_SSH_PORT <= 65535 ))
+
+      - name: Configure pinned SSH trust
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -m 0700 -d "$HOME/.ssh"
+          printf '%s\n' "$RUNTIME_SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 0600 "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$RUNTIME_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/known_hosts"
+
+      - name: Collect runtime contract without changing the server
+        id: contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-evidence
+          ssh_options=(
+            -i "$HOME/.ssh/id_ed25519"
+            -p "$RUNTIME_SSH_PORT"
+            -o BatchMode=yes
+            -o ConnectTimeout=10
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+            -o ServerAliveInterval=15
+            -o ServerAliveCountMax=2
+          )
+          ssh "${ssh_options[@]}" "$RUNTIME_USER@$RUNTIME_HOST" bash -s -- \
+            "$RUNTIME_ROOT" "$RUNTIME_ENV_FILE" "$RUNTIME_SECRETS_ROOT" "$EXPECTED_API_PORT" \
+            < scripts/runtime-path-inventory.sh \
+            | tee runtime-evidence/runtime-observation.txt
+
+          awk '
+            /^BEGIN_CONTRACT$/ { capture=1; next }
+            /^END_CONTRACT$/ { capture=0 }
+            capture { print }
+          ' runtime-evidence/runtime-observation.txt \
+            | LC_ALL=C sort > runtime-evidence/runtime-contract.txt
+
+          fingerprint="$(sha256sum runtime-evidence/runtime-contract.txt | awk '{print $1}')"
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+
+          TARGET="${{ inputs.target }}" \
+          SOURCE_SHA="$GITHUB_SHA" \
+          FINGERPRINT="$fingerprint" \
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          def parse_section(path: Path, begin: str, end: str) -> dict[str, str]:
+              result: dict[str, str] = {}
+              active = False
+              for raw in path.read_text(encoding="utf-8").splitlines():
+                  if raw == begin:
+                      active = True
+                      continue
+                  if raw == end:
+                      active = False
+                      continue
+                  if active and "=" in raw:
+                      key, value = raw.split("=", 1)
+                      result[key] = value
+              return result
+
+          observation = Path("runtime-evidence/runtime-observation.txt")
+          payload = {
+              "schema_version": 1,
+              "target": os.environ["TARGET"],
+              "source_sha": os.environ["SOURCE_SHA"],
+              "runtime_fingerprint": os.environ["FINGERPRINT"],
+              "contract": parse_section(observation, "BEGIN_CONTRACT", "END_CONTRACT"),
+              "observations": parse_section(observation, "BEGIN_OBSERVATIONS", "END_OBSERVATIONS"),
+              "server_modified": False,
+          }
+          Path("runtime-evidence/runtime-path-contract.json").write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Publish read-only inventory evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: runtime-path-contract-${{ inputs.target }}-${{ steps.contract.outputs.fingerprint }}
+          path: runtime-evidence/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Record fingerprint in the job summary
+        shell: bash
+        run: |
+          {
+            echo '## Runtime path inventory'
+            echo
+            echo '- Target: `${{ inputs.target }}`'
+            echo '- Fingerprint: `${{ steps.contract.outputs.fingerprint }}`'
+            echo '- Server modified: `false`'
+            echo
+            echo 'Use the exact fingerprint as a deployment workflow input only after reviewing the artifact.'
+          } >> "$GITHUB_STEP_SUMMARY"

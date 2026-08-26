@@ -4,158 +4,508 @@ on:
   workflow_dispatch:
     inputs:
       image_ref:
-        description: Immutable GHCR image reference ending in @sha256:<digest>
+        description: Immutable GHCR scraper image ending in @sha256:<digest>
         required: true
         type: string
       release_sha:
-        description: Reviewed source SHA represented by the image
+        description: Reviewed 40-character source SHA from the protected release branch
         required: true
         type: string
       previous_image_ref:
-        description: Previous immutable image for rollback testing
+        description: Previous immutable scraper image used for rollback testing
+        required: true
+        type: string
+      runtime_root:
+        description: Existing verified staging runtime root
+        required: true
+        type: string
+      runtime_env_file:
+        description: Existing externally managed staging environment file
+        required: true
+        type: string
+      runtime_secrets_root:
+        description: Existing staging secrets directory
+        required: true
+        type: string
+      runtime_fingerprint:
+        description: SHA-256 fingerprint from Runtime path inventory
+        required: true
+        type: string
+      expected_api_port:
+        description: Expected loopback API port
+        required: true
+        default: '3200'
+        type: string
+      approval:
+        description: Enter DEPLOY-STAGING <release_sha> <image_ref> <runtime_fingerprint>
         required: true
         type: string
 
 permissions:
   contents: read
 
-environments:
-  staging:
+env:
+  RELEASE_BRANCH: release/production-readiness-20260826
+
+concurrency:
+  group: staging-deploy
+  cancel-in-progress: false
 
 jobs:
-  deploy:
+  verify-artifact:
+    name: verify-artifact
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
-    environment: staging
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      IMAGE_REF: ${{ inputs.image_ref }}
+      PREVIOUS_IMAGE_REF: ${{ inputs.previous_image_ref }}
+      RELEASE_SHA: ${{ inputs.release_sha }}
+      RUNTIME_FINGERPRINT: ${{ inputs.runtime_fingerprint }}
+      APPROVAL: ${{ inputs.approval }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 0
 
-      - name: Validate immutable inputs
-        env:
-          IMAGE_REF: ${{ inputs.image_ref }}
-          PREVIOUS_IMAGE_REF: ${{ inputs.previous_image_ref }}
+      - name: Validate immutable inputs and digest-bound approval
+        shell: bash
         run: |
-          [[ "$IMAGE_REF" =~ @sha256:[a-f0-9]{64}$ ]]
-          [[ "$PREVIOUS_IMAGE_REF" =~ @sha256:[a-f0-9]{64}$ ]]
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$RUNTIME_FINGERPRINT" =~ ^[a-f0-9]{64}$ ]]
+          [[ "$IMAGE_REF" =~ ^ghcr\.io/appolon1908-hue/scrapper@sha256:[a-f0-9]{64}$ ]]
+          [[ "$PREVIOUS_IMAGE_REF" =~ ^ghcr\.io/appolon1908-hue/scrapper@sha256:[a-f0-9]{64}$ ]]
+          [[ "$APPROVAL" == "DEPLOY-STAGING $RELEASE_SHA $IMAGE_REF $RUNTIME_FINGERPRINT" ]]
+          [[ "$(git rev-parse HEAD)" == "$RELEASE_SHA" ]]
 
-      - name: Configure SSH trust
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
-          SSH_KNOWN_HOSTS: ${{ secrets.STAGING_SSH_KNOWN_HOSTS }}
+      - name: Require protected release lineage
+        shell: bash
         run: |
-          install -m 0700 -d ~/.ssh
-          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
-          chmod 0600 ~/.ssh/id_ed25519
-          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 0600 ~/.ssh/known_hosts
+          set -euo pipefail
+          encoded_branch="$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["RELEASE_BRANCH"], safe=""))')"
+          branch_json="$(gh api "repos/${GITHUB_REPOSITORY}/branches/${encoded_branch}")"
+          [[ "$(jq -r '.protected' <<<"$branch_json")" == "true" ]]
+          branch_sha="$(jq -r '.commit.sha' <<<"$branch_json")"
+          git fetch --no-tags origin "refs/heads/$RELEASE_BRANCH:refs/remotes/origin/release-candidate"
+          git merge-base --is-ancestor "$RELEASE_SHA" "$branch_sha"
 
-      - name: Upload reviewed deployment files
-        env:
-          STAGING_HOST: ${{ secrets.STAGING_HOST }}
-          STAGING_USER: ${{ secrets.STAGING_USER }}
-          STAGING_ROOT: ${{ vars.STAGING_ROOT || '/opt/codestra-scrapper/staging' }}
-        run: |
-          tar -czf /tmp/staging-deploy.tgz \
-            docker-compose.yml deploy scripts/no-write-canary.mjs \
-            scripts/deploy-staging.sh scripts/rollback-staging.sh
-          ssh "$STAGING_USER@$STAGING_HOST" "mkdir -p '$STAGING_ROOT'"
-          scp /tmp/staging-deploy.tgz "$STAGING_USER@$STAGING_HOST:$STAGING_ROOT/"
-          ssh "$STAGING_USER@$STAGING_HOST" \
-            "cd '$STAGING_ROOT' && tar -xzf staging-deploy.tgz && rm staging-deploy.tgz"
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install staging environment and canary credentials
-        env:
-          STAGING_HOST: ${{ secrets.STAGING_HOST }}
-          STAGING_USER: ${{ secrets.STAGING_USER }}
-          STAGING_ROOT: ${{ vars.STAGING_ROOT || '/opt/codestra-scrapper/staging' }}
-          STAGING_ENV_CONTENT: ${{ secrets.STAGING_ENV_CONTENT }}
-          CANARY_TOKEN: ${{ secrets.STAGING_CANARY_TOKEN }}
-          CANARY_TENANT_ID: ${{ secrets.STAGING_CANARY_TENANT_ID }}
-          CANARY_API_BASE: ${{ vars.STAGING_CANARY_API_BASE }}
-          CANARY_SEED_URL: ${{ vars.STAGING_CANARY_SEED_URL || 'https://example.com' }}
-          IMAGE_REF: ${{ inputs.image_ref }}
-        run: |
-          {
-            printf '%s\n' "$STAGING_ENV_CONTENT"
-            printf 'SCRAPPER_IMAGE=%s\n' "$IMAGE_REF"
-            printf 'ENABLE_EXTERNAL_DELIVERY=false\n'
-            printf 'ENABLE_REGISTRY_ENRICHMENT=false\n'
-          } | ssh "$STAGING_USER@$STAGING_HOST" \
-            "umask 077; cat > '$STAGING_ROOT/deploy/staging.env'"
-          {
-            printf 'CANARY_TOKEN=%q\n' "$CANARY_TOKEN"
-            printf 'CANARY_TENANT_ID=%q\n' "$CANARY_TENANT_ID"
-            printf 'CANARY_API_BASE=%q\n' "$CANARY_API_BASE"
-            printf 'CANARY_SEED_URL=%q\n' "$CANARY_SEED_URL"
-          } | ssh "$STAGING_USER@$STAGING_HOST" \
-            "umask 077; cat > '$STAGING_ROOT/.canary.env'"
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
 
-      - name: Deploy with external delivery disabled and run no-write canary
-        env:
-          STAGING_HOST: ${{ secrets.STAGING_HOST }}
-          STAGING_USER: ${{ secrets.STAGING_USER }}
-          STAGING_ROOT: ${{ vars.STAGING_ROOT || '/opt/codestra-scrapper/staging' }}
-          RELEASE_SHA: ${{ inputs.release_sha }}
+      - name: Verify image revision signature and attestation
+        shell: bash
         run: |
-          ssh "$STAGING_USER@$STAGING_HOST" bash -s -- "$STAGING_ROOT" "$RELEASE_SHA" <<'REMOTE'
+          set -euo pipefail
+          docker pull "$IMAGE_REF"
+          revision="$(docker image inspect "$IMAGE_REF" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+          [[ "$revision" == "$RELEASE_SHA" ]]
+          cosign verify \
+            --certificate-identity-regexp "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release-readiness.yml@.*" \
+            --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+            "$IMAGE_REF" >/dev/null
+          gh attestation verify "oci://$IMAGE_REF" --repo "$GITHUB_REPOSITORY"
+
+  runtime-preflight:
+    name: runtime-preflight
+    needs: verify-artifact
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: staging-runtime-audit
+    env:
+      RUNTIME_HOST: ${{ secrets.RUNTIME_AUDIT_HOST }}
+      RUNTIME_USER: ${{ secrets.RUNTIME_AUDIT_USER }}
+      RUNTIME_SSH_KEY: ${{ secrets.RUNTIME_AUDIT_SSH_KEY }}
+      RUNTIME_KNOWN_HOSTS: ${{ secrets.RUNTIME_AUDIT_KNOWN_HOSTS }}
+      RUNTIME_SSH_PORT: ${{ vars.RUNTIME_AUDIT_SSH_PORT || '22' }}
+      RUNTIME_ROOT: ${{ inputs.runtime_root }}
+      RUNTIME_ENV_FILE: ${{ inputs.runtime_env_file }}
+      RUNTIME_SECRETS_ROOT: ${{ inputs.runtime_secrets_root }}
+      RUNTIME_FINGERPRINT: ${{ inputs.runtime_fingerprint }}
+      EXPECTED_API_PORT: ${{ inputs.expected_api_port }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.release_sha }}
+
+      - name: Configure read-only SSH identity and pinned host keys
+        shell: bash
+        run: |
+          set -euo pipefail
+          for value in RUNTIME_HOST RUNTIME_USER RUNTIME_SSH_KEY RUNTIME_KNOWN_HOSTS; do
+            [[ -n "${!value:-}" ]] || { echo "ERROR=MISSING_${value}" >&2; exit 1; }
+          done
+          [[ "$RUNTIME_USER" =~ ^[A-Za-z0-9._-]+$ ]]
+          [[ "$RUNTIME_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          [[ "$RUNTIME_SSH_PORT" =~ ^[0-9]{1,5}$ ]]
+          (( RUNTIME_SSH_PORT >= 1 && RUNTIME_SSH_PORT <= 65535 ))
+          for path in "$RUNTIME_ROOT" "$RUNTIME_ENV_FILE" "$RUNTIME_SECRETS_ROOT"; do
+            [[ "$path" =~ ^/[A-Za-z0-9._/-]+$ ]]
+            [[ "$path" != "/" && "$path" != *"//"* && "$path" != *"/../"* && "$path" != *"/./"* ]]
+          done
+          [[ "$EXPECTED_API_PORT" =~ ^[0-9]{1,5}$ ]]
+          install -m 0700 -d "$HOME/.ssh"
+          printf '%s\n' "$RUNTIME_SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 0600 "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$RUNTIME_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/known_hosts"
+
+      - name: Verify reviewed fingerprint without changing the server
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-evidence
+          ssh_options=(
+            -i "$HOME/.ssh/id_ed25519"
+            -p "$RUNTIME_SSH_PORT"
+            -o BatchMode=yes
+            -o ConnectTimeout=10
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+          )
+          ssh "${ssh_options[@]}" "$RUNTIME_USER@$RUNTIME_HOST" bash -s -- \
+            "$RUNTIME_ROOT" "$RUNTIME_ENV_FILE" "$RUNTIME_SECRETS_ROOT" "$EXPECTED_API_PORT" \
+            < scripts/runtime-path-inventory.sh \
+            | tee runtime-evidence/preflight-observation.txt
+          awk '
+            /^BEGIN_CONTRACT$/ { capture=1; next }
+            /^END_CONTRACT$/ { capture=0 }
+            capture { print }
+          ' runtime-evidence/preflight-observation.txt \
+            | LC_ALL=C sort > runtime-evidence/preflight-contract.txt
+          actual="$(sha256sum runtime-evidence/preflight-contract.txt | awk '{print $1}')"
+          [[ "$actual" == "$RUNTIME_FINGERPRINT" ]]
+          grep -qx 'ready_for_write_disabled_deploy=true' runtime-evidence/preflight-contract.txt
+          printf '%s\n' "$actual" > runtime-evidence/verified-fingerprint.txt
+          printf '%s\n' 'server_modified=false' > runtime-evidence/preflight-result.txt
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: staging-runtime-preflight-${{ inputs.runtime_fingerprint }}
+          path: runtime-evidence/
+          if-no-files-found: error
+          retention-days: 30
+
+  deploy:
+    name: deploy
+    needs: [verify-artifact, runtime-preflight]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: staging
+    env:
+      STAGING_HOST: ${{ secrets.STAGING_HOST }}
+      STAGING_USER: ${{ secrets.STAGING_USER }}
+      STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      STAGING_KNOWN_HOSTS: ${{ secrets.STAGING_SSH_KNOWN_HOSTS }}
+      STAGING_SSH_PORT: ${{ vars.STAGING_SSH_PORT || '22' }}
+      STAGING_GHCR_USER: ${{ secrets.STAGING_GHCR_USER }}
+      STAGING_GHCR_READ_TOKEN: ${{ secrets.STAGING_GHCR_READ_TOKEN }}
+      RUNTIME_ROOT: ${{ inputs.runtime_root }}
+      RUNTIME_ENV_FILE: ${{ inputs.runtime_env_file }}
+      RUNTIME_SECRETS_ROOT: ${{ inputs.runtime_secrets_root }}
+      RUNTIME_FINGERPRINT: ${{ inputs.runtime_fingerprint }}
+      EXPECTED_API_PORT: ${{ inputs.expected_api_port }}
+      RELEASE_SHA: ${{ inputs.release_sha }}
+      IMAGE_REF: ${{ inputs.image_ref }}
+      PREVIOUS_IMAGE_REF: ${{ inputs.previous_image_ref }}
+      CANARY_TOKEN: ${{ secrets.STAGING_CANARY_TOKEN }}
+      CANARY_TENANT_ID: ${{ secrets.STAGING_CANARY_TENANT_ID }}
+      CANARY_API_BASE: ${{ vars.STAGING_CANARY_API_BASE }}
+      CANARY_SEED_URL: ${{ vars.STAGING_CANARY_SEED_URL || 'https://example.com' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.release_sha }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.16.0'
+
+      - name: Validate deployment credentials and explicit paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          for value in STAGING_HOST STAGING_USER STAGING_SSH_KEY STAGING_KNOWN_HOSTS STAGING_GHCR_USER STAGING_GHCR_READ_TOKEN CANARY_TOKEN CANARY_TENANT_ID CANARY_API_BASE; do
+            [[ -n "${!value:-}" ]] || { echo "ERROR=MISSING_${value}" >&2; exit 1; }
+          done
+          [[ "$STAGING_USER" =~ ^[A-Za-z0-9._-]+$ ]]
+          [[ "$STAGING_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          [[ "$STAGING_GHCR_USER" =~ ^[A-Za-z0-9._-]+$ ]]
+          [[ "$STAGING_SSH_PORT" =~ ^[0-9]{1,5}$ ]]
+          for path in "$RUNTIME_ROOT" "$RUNTIME_ENV_FILE" "$RUNTIME_SECRETS_ROOT"; do
+            [[ "$path" =~ ^/[A-Za-z0-9._/-]+$ ]]
+            [[ "$path" != "/" && "$path" != *"//"* && "$path" != *"/../"* && "$path" != *"/./"* ]]
+          done
+
+      - name: Configure deployment SSH identity and pinned host keys
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -m 0700 -d "$HOME/.ssh"
+          printf '%s\n' "$STAGING_SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 0600 "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$STAGING_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/known_hosts"
+
+      - name: Reverify fingerprint before the first server write
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh_options=(
+            -i "$HOME/.ssh/id_ed25519"
+            -p "$STAGING_SSH_PORT"
+            -o BatchMode=yes
+            -o ConnectTimeout=10
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+          )
+          ssh "${ssh_options[@]}" "$STAGING_USER@$STAGING_HOST" bash -s -- \
+            "$RUNTIME_ROOT" "$RUNTIME_ENV_FILE" "$RUNTIME_SECRETS_ROOT" "$EXPECTED_API_PORT" \
+            < scripts/runtime-path-inventory.sh > runtime-before-deploy.txt
+          awk '
+            /^BEGIN_CONTRACT$/ { capture=1; next }
+            /^END_CONTRACT$/ { capture=0 }
+            capture { print }
+          ' runtime-before-deploy.txt | LC_ALL=C sort > runtime-before-deploy.contract
+          actual="$(sha256sum runtime-before-deploy.contract | awk '{print $1}')"
+          [[ "$actual" == "$RUNTIME_FINGERPRINT" ]]
+          grep -qx 'ready_for_write_disabled_deploy=true' runtime-before-deploy.contract
+
+      - name: Upload reviewed package after path verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="/tmp/scrapper-staging-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tgz"
+          tar -czf "$archive" \
+            docker-compose.yml \
+            deploy \
+            scripts/deploy-staging.sh \
+            scripts/rollback-staging.sh
+          sha256sum "$archive" > "$archive.sha256"
+          ssh_options=(
+            -i "$HOME/.ssh/id_ed25519"
+            -p "$STAGING_SSH_PORT"
+            -o BatchMode=yes
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+          )
+          scp_options=(
+            -i "$HOME/.ssh/id_ed25519"
+            -P "$STAGING_SSH_PORT"
+            -o BatchMode=yes
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+          )
+          printf '%s' "$STAGING_GHCR_READ_TOKEN" | \
+            ssh "${ssh_options[@]}" "$STAGING_USER@$STAGING_HOST" \
+              "docker login ghcr.io -u '$STAGING_GHCR_USER' --password-stdin"
+          scp "${scp_options[@]}" "$archive" "$archive.sha256" \
+            "$STAGING_USER@$STAGING_HOST:/tmp/"
+
+      - name: Deploy candidate with external writes disabled
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_archive="/tmp/scrapper-staging-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tgz"
+          ssh_options=(
+            -i "$HOME/.ssh/id_ed25519"
+            -p "$STAGING_SSH_PORT"
+            -o BatchMode=yes
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+          )
+          ssh "${ssh_options[@]}" "$STAGING_USER@$STAGING_HOST" bash -s -- \
+            "$RUNTIME_ROOT" "$RUNTIME_ENV_FILE" "$RUNTIME_SECRETS_ROOT" \
+            "$EXPECTED_API_PORT" "$RELEASE_SHA" "$IMAGE_REF" "$remote_archive" <<'REMOTE'
+          set -euo pipefail
+          root="$1"
+          env_file="$2"
+          secrets_root="$3"
+          api_port="$4"
+          release_sha="$5"
+          image="$6"
+          archive="$7"
+
+          [[ -d "$root" && ! -L "$root" ]]
+          [[ -f "$env_file" && ! -L "$env_file" ]]
+          [[ -d "$secrets_root" && ! -L "$secrets_root" ]]
+          grep -Eq '^[[:space:]]*ENABLE_EXTERNAL_DELIVERY[[:space:]]*=[[:space:]]*false[[:space:]]*$' "$env_file"
+          grep -Eq '^[[:space:]]*ENABLE_REGISTRY_ENRICHMENT[[:space:]]*=[[:space:]]*false[[:space:]]*$' "$env_file"
+          (cd /tmp && sha256sum -c "$(basename "$archive").sha256")
+          if tar -tzf "$archive" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+            echo "ERROR=UNSAFE_ARCHIVE_PATH" >&2
+            exit 1
+          fi
+
+          release_dir="$root/releases/$release_sha"
+          install -d -m 0750 "$root/releases" "$release_dir"
+          tar -xzf "$archive" --no-same-owner --no-same-permissions -C "$release_dir"
+          cd "$release_dir"
+          printf '%s\n' "$release_sha" > .source_sha
+          sha256sum "$archive" | awk '{print $1}' > .package_sha256
+          CANDIDATE_SCRAPPER_IMAGE="$image" \
+          DEPLOY_ENV_FILE="$env_file" \
+          EVIDENCE_DIR="release-evidence/staging" \
+          READINESS_URL="http://127.0.0.1:$api_port/readyz" \
+          RELEASE_SHA="$release_sha" \
+            bash scripts/deploy-staging.sh
+          rm -f "$archive" "$archive.sha256"
+          REMOTE
+
+      - name: Run no-write canary from the isolated runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runner-evidence/staging
+          RELEASE_SHA="$RELEASE_SHA" node scripts/no-write-canary.mjs \
+            | tee runner-evidence/staging/no-write-canary.json
+
+      - name: Exercise rollback to the previous immutable image
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh_options=(
+            -i "$HOME/.ssh/id_ed25519"
+            -p "$STAGING_SSH_PORT"
+            -o BatchMode=yes
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+          )
+          ssh "${ssh_options[@]}" "$STAGING_USER@$STAGING_HOST" bash -s -- \
+            "$RUNTIME_ROOT" "$RUNTIME_ENV_FILE" "$EXPECTED_API_PORT" \
+            "$RELEASE_SHA" "$PREVIOUS_IMAGE_REF" <<'REMOTE'
+          set -euo pipefail
+          root="$1"
+          env_file="$2"
+          api_port="$3"
+          release_sha="$4"
+          previous="$5"
+          cd "$root/releases/$release_sha"
+          PREVIOUS_SCRAPPER_IMAGE="$previous" \
+          DEPLOY_ENV_FILE="$env_file" \
+          EVIDENCE_DIR="release-evidence/rollback" \
+          READINESS_URL="http://127.0.0.1:$api_port/readyz" \
+            bash scripts/rollback-staging.sh
+          REMOTE
+          mkdir -p runner-evidence/rollback
+          RELEASE_SHA="rollback-$RELEASE_SHA" node scripts/no-write-canary.mjs \
+            | tee runner-evidence/rollback/no-write-canary.json
+
+      - name: Restore candidate and rerun the no-write canary
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh_options=(
+            -i "$HOME/.ssh/id_ed25519"
+            -p "$STAGING_SSH_PORT"
+            -o BatchMode=yes
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+          )
+          ssh "${ssh_options[@]}" "$STAGING_USER@$STAGING_HOST" bash -s -- \
+            "$RUNTIME_ROOT" "$RUNTIME_ENV_FILE" "$EXPECTED_API_PORT" \
+            "$RELEASE_SHA" "$IMAGE_REF" <<'REMOTE'
+          set -euo pipefail
+          root="$1"
+          env_file="$2"
+          api_port="$3"
+          release_sha="$4"
+          candidate="$5"
+          cd "$root/releases/$release_sha"
+          CANDIDATE_SCRAPPER_IMAGE="$candidate" \
+          DEPLOY_ENV_FILE="$env_file" \
+          EVIDENCE_DIR="release-evidence/restored-candidate" \
+          READINESS_URL="http://127.0.0.1:$api_port/readyz" \
+          RELEASE_SHA="$release_sha" \
+            bash scripts/deploy-staging.sh
+          REMOTE
+          mkdir -p runner-evidence/restored-candidate
+          RELEASE_SHA="$RELEASE_SHA" node scripts/no-write-canary.mjs \
+            | tee runner-evidence/restored-candidate/no-write-canary.json
+
+      - name: Record candidate identity only after canary and rollback pass
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh_options=(
+            -i "$HOME/.ssh/id_ed25519"
+            -p "$STAGING_SSH_PORT"
+            -o BatchMode=yes
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+          )
+          ssh "${ssh_options[@]}" "$STAGING_USER@$STAGING_HOST" bash -s -- \
+            "$RUNTIME_ROOT" "$RELEASE_SHA" "$IMAGE_REF" "$PREVIOUS_IMAGE_REF" <<'REMOTE'
           set -euo pipefail
           root="$1"
           release_sha="$2"
-          cd "$root"
-          set -a
-          source .canary.env
-          set +a
-          DEPLOY_ENV_FILE=deploy/staging.env \
-          EVIDENCE_DIR=release-evidence/staging \
-          RELEASE_SHA="$release_sha" \
-            bash scripts/deploy-staging.sh
-          rm -f .canary.env
+          candidate="$3"
+          previous="$4"
+          printf '%s\n' "$previous" > "$root/.previous_image"
+          printf '%s\n' "$candidate" > "$root/.current_image"
+          printf '%s\n' "$release_sha" > "$root/.current_release"
           REMOTE
 
-      - name: Exercise rollback and restore the reviewed candidate
-        env:
-          STAGING_HOST: ${{ secrets.STAGING_HOST }}
-          STAGING_USER: ${{ secrets.STAGING_USER }}
-          STAGING_ROOT: ${{ vars.STAGING_ROOT || '/opt/codestra-scrapper/staging' }}
-          PREVIOUS_IMAGE_REF: ${{ inputs.previous_image_ref }}
-          IMAGE_REF: ${{ inputs.image_ref }}
-          RELEASE_SHA: ${{ inputs.release_sha }}
+      - name: Collect deployment evidence and remove registry credentials
+        if: always()
+        shell: bash
         run: |
-          ssh "$STAGING_USER@$STAGING_HOST" bash -s -- \
-            "$STAGING_ROOT" "$PREVIOUS_IMAGE_REF" "$IMAGE_REF" "$RELEASE_SHA" <<'REMOTE'
+          ssh_options=(
+            -i "$HOME/.ssh/id_ed25519"
+            -p "$STAGING_SSH_PORT"
+            -o BatchMode=yes
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+          )
+          scp_options=(
+            -i "$HOME/.ssh/id_ed25519"
+            -P "$STAGING_SSH_PORT"
+            -o BatchMode=yes
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+          )
+          remote_evidence="/tmp/scrapper-staging-evidence-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tgz"
+          ssh "${ssh_options[@]}" "$STAGING_USER@$STAGING_HOST" bash -s -- \
+            "$RUNTIME_ROOT" "$RELEASE_SHA" "$remote_evidence" <<'REMOTE' || true
           set -euo pipefail
           root="$1"
-          previous="$2"
-          candidate="$3"
-          release_sha="$4"
-          cd "$root"
-          set -a
-          source .canary.env 2>/dev/null || true
-          set +a
-          PREVIOUS_SCRAPPER_IMAGE="$previous" \
-          DEPLOY_ENV_FILE=deploy/staging.env \
-          EVIDENCE_DIR=release-evidence/rollback \
-            bash scripts/rollback-staging.sh
-          sed -i "s#^SCRAPPER_IMAGE=.*#SCRAPPER_IMAGE=$candidate#" deploy/staging.env
-          DEPLOY_ENV_FILE=deploy/staging.env \
-          EVIDENCE_DIR=release-evidence/restored-candidate \
-          RELEASE_SHA="$release_sha" \
-            bash scripts/deploy-staging.sh
+          release_sha="$2"
+          destination="$3"
+          cd "$root/releases/$release_sha"
+          tar -czf "$destination" release-evidence
           REMOTE
+          scp "${scp_options[@]}" "$STAGING_USER@$STAGING_HOST:$remote_evidence" ./ || true
+          ssh "${ssh_options[@]}" "$STAGING_USER@$STAGING_HOST" \
+            "rm -f '$remote_evidence'; docker logout ghcr.io >/dev/null 2>&1 || true" || true
 
-      - name: Download staging and rollback evidence
-        env:
-          STAGING_HOST: ${{ secrets.STAGING_HOST }}
-          STAGING_USER: ${{ secrets.STAGING_USER }}
-          STAGING_ROOT: ${{ vars.STAGING_ROOT || '/opt/codestra-scrapper/staging' }}
-        run: |
-          ssh "$STAGING_USER@$STAGING_HOST" \
-            "cd '$STAGING_ROOT' && tar -czf /tmp/scrapper-release-evidence.tgz release-evidence"
-          scp "$STAGING_USER@$STAGING_HOST:/tmp/scrapper-release-evidence.tgz" ./
-
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
         with:
-          name: staging-evidence-${{ inputs.release_sha }}
-          path: scrapper-release-evidence.tgz
-          if-no-files-found: error
+          name: staging-deployment-evidence-${{ inputs.release_sha }}
+          path: |
+            runner-evidence/
+            scrapper-staging-evidence-*.tgz
+            runtime-before-deploy.txt
+            runtime-before-deploy.contract
+          if-no-files-found: warn
           retention-days: 30

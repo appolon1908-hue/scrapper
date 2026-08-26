@@ -2,34 +2,55 @@ name: Configure release branch protection
 
 on:
   workflow_dispatch:
+    inputs:
+      release_branch:
+        description: Existing release branch to protect
+        required: true
+        default: release/production-readiness-20260826
+        type: string
+      approval:
+        description: Enter PROTECT followed by one space and the exact branch name
+        required: true
+        type: string
 
 permissions:
   contents: read
+
+concurrency:
+  group: release-governance-${{ inputs.release_branch }}
+  cancel-in-progress: false
 
 jobs:
   protect:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    environment: release-governance
     env:
       GH_TOKEN: ${{ secrets.RELEASE_ADMIN_TOKEN }}
-      RELEASE_BRANCH: release/production-readiness-20260826
+      RELEASE_BRANCH: ${{ inputs.release_branch }}
+      APPROVAL: ${{ inputs.approval }}
     steps:
-      - name: Require repository administration token
+      - name: Validate governance authority and explicit approval
+        shell: bash
         run: |
-          if [[ -z "${GH_TOKEN}" ]]; then
-            echo 'RELEASE_ADMIN_TOKEN is not configured.' >&2
-            echo 'The token must have repository administration permission and must be stored as an Actions secret.' >&2
-            exit 1
-          fi
+          set -euo pipefail
+          [[ -n "$GH_TOKEN" ]]
+          [[ "$RELEASE_BRANCH" =~ ^(release/[A-Za-z0-9._/-]+|production)$ ]]
+          [[ "$RELEASE_BRANCH" != *".."* && "$RELEASE_BRANCH" != *"//"* ]]
+          [[ "$APPROVAL" == "PROTECT $RELEASE_BRANCH" ]]
+          encoded_branch="$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["RELEASE_BRANCH"], safe=""))')"
+          gh api "repos/${GITHUB_REPOSITORY}/branches/${encoded_branch}" >/dev/null
 
       - name: Apply protected release policy
+        shell: bash
         run: |
+          set -euo pipefail
           encoded_branch="$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["RELEASE_BRANCH"], safe=""))')"
           cat > /tmp/protection.json <<'JSON'
           {
             "required_status_checks": {
               "strict": true,
-              "contexts": ["validate"]
+              "contexts": ["validate", "deployment-policy", "gateway"]
             },
             "enforce_admins": true,
             "required_pull_request_reviews": {
@@ -60,8 +81,22 @@ jobs:
             "repos/${GITHUB_REPOSITORY}/branches/${encoded_branch}/protection" \
             --input /tmp/protection.json
 
-      - name: Verify protection is active
+      - name: Verify the resulting policy
+        shell: bash
         run: |
+          set -euo pipefail
           encoded_branch="$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["RELEASE_BRANCH"], safe=""))')"
-          protected="$(gh api "repos/${GITHUB_REPOSITORY}/branches/${encoded_branch}" --jq '.protected')"
-          [[ "${protected}" == 'true' ]]
+          branch_json="$(gh api "repos/${GITHUB_REPOSITORY}/branches/${encoded_branch}")"
+          protection_json="$(gh api "repos/${GITHUB_REPOSITORY}/branches/${encoded_branch}/protection")"
+          [[ "$(jq -r '.protected' <<<"$branch_json")" == "true" ]]
+          jq -e '
+            .enforce_admins.enabled == true and
+            .required_pull_request_reviews.dismiss_stale_reviews == true and
+            .required_pull_request_reviews.require_last_push_approval == true and
+            .required_pull_request_reviews.required_approving_review_count >= 1 and
+            .required_linear_history.enabled == true and
+            .required_conversation_resolution.enabled == true and
+            ([.required_status_checks.contexts[]] | sort) ==
+              (["deployment-policy", "gateway", "validate"] | sort)
+          ' <<<"$protection_json" >/dev/null
+          echo "RELEASE_BRANCH_PROTECTION=PASS"
