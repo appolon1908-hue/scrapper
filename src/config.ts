@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 
-export type RuntimeRole = 'api' | 'crawl-worker' | 'delivery-worker' | 'all';
+export type RuntimeRole = 'api' | 'crawl-worker' | 'delivery-worker' | 'migrate' | 'all';
 
 function integer(name: string, fallback: number, min: number, max: number): number {
   const raw = process.env[name];
@@ -44,16 +44,21 @@ export function readSecret(fileEnv: string, directEnv: string): string {
 }
 
 const role = (process.env.ROLE || 'all') as RuntimeRole;
-if (!['api', 'crawl-worker', 'delivery-worker', 'all'].includes(role)) {
+if (!['api', 'crawl-worker', 'delivery-worker', 'migrate', 'all'].includes(role)) {
   throw new Error('invalid_environment:ROLE');
 }
 
 const nodeEnv = process.env.NODE_ENV || 'development';
 const externalDeliveryEnabled = bool('ENABLE_EXTERNAL_DELIVERY', false);
 const servicePrincipalsFile = process.env.SERVICE_PRINCIPALS_FILE || '';
+const jobLeaseSeconds = integer('JOB_LEASE_SECONDS', 180, 60, 3600);
+const jobHeartbeatSeconds = integer('JOB_HEARTBEAT_SECONDS', 15, 5, 300);
+if (jobHeartbeatSeconds * 2 >= jobLeaseSeconds) {
+  throw new Error('JOB_HEARTBEAT_SECONDS must be less than half of JOB_LEASE_SECONDS');
+}
 
-if (nodeEnv === 'production' && !servicePrincipalsFile) {
-  throw new Error('SERVICE_PRINCIPALS_FILE is required in production');
+if (nodeEnv === 'production' && ['api', 'all'].includes(role) && !servicePrincipalsFile) {
+  throw new Error('SERVICE_PRINCIPALS_FILE is required for the production API');
 }
 
 if (nodeEnv === 'production' && externalDeliveryEnabled) {
@@ -89,6 +94,9 @@ export const config = Object.freeze({
   httpConcurrency: integer('HTTP_CONCURRENCY', 12, 1, 100),
   browserConcurrency: integer('BROWSER_CONCURRENCY', 2, 1, 20),
   jobConcurrency: integer('JOB_CONCURRENCY', 2, 1, 20),
+  jobLeaseSeconds,
+  jobHeartbeatSeconds,
+  outboxLeaseSeconds: integer('OUTBOX_LEASE_SECONDS', 600, 30, 3600),
   perHostRequestsPerSecond: decimal('PER_HOST_REQUESTS_PER_SECOND', 1, 0.1, 10),
   middlewareBaseUrl: (process.env.MIDDLEWARE_BASE_URL || '').replace(/\/$/, ''),
   middlewareResultsPath: process.env.MIDDLEWARE_RESULTS_PATH || '/api/v2/scraper/results/batches',

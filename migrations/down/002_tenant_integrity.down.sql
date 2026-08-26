@@ -1,0 +1,11 @@
+DROP INDEX IF EXISTS audit_events_resource_idx;
+DROP INDEX IF EXISTS business_entities_record_gin_idx;
+ALTER TABLE outbox_events DROP CONSTRAINT IF EXISTS outbox_events_attempts_nonnegative;
+ALTER TABLE job_business_records DROP CONSTRAINT IF EXISTS job_business_records_confidence_range;
+ALTER TABLE business_entities DROP CONSTRAINT IF EXISTS business_entities_confidence_range;
+ALTER TABLE business_identifiers DROP CONSTRAINT IF EXISTS business_identifiers_tenant_entity_fk;
+ALTER TABLE job_business_records DROP CONSTRAINT IF EXISTS job_business_records_tenant_entity_fk;
+ALTER TABLE job_business_records DROP CONSTRAINT IF EXISTS job_business_records_tenant_job_fk;
+ALTER TABLE crawl_pages DROP CONSTRAINT IF EXISTS crawl_pages_tenant_job_fk;
+ALTER TABLE business_entities DROP CONSTRAINT IF EXISTS business_entities_tenant_id_id_unique;
+ALTER TABLE crawl_jobs DROP CONSTRAINT IF EXISTS crawl_jobs_tenant_id_id_unique;
