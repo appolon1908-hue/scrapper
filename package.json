@@ -12,13 +12,15 @@
     "start:crawl-worker": "ROLE=crawl-worker node dist/main.js",
     "start:delivery-worker": "ROLE=delivery-worker node dist/main.js",
     "migrate": "node dist/migrate.js",
+    "migrate:down": "node dist/migrate-down.js",
     "lint": "eslint src/**/*.ts eslint.config.js",
     "typecheck": "tsc --noEmit",
     "format-check": "prettier --check .",
     "test": "npm run build && node --test test/*.test.mjs",
     "test:unit": "npm run test",
     "test:contract": "npm run build && node --test test/unit-api-contract.test.mjs",
-    "check": "npm run lint && npm run typecheck && npm run test"
+    "test:integration": "npm run build && node --test --test-concurrency=1 test/integration-*.test.mjs",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run format-check"
   },
   "dependencies": {
     "@crawlee/cheerio": "3.18.1",
