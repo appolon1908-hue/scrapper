@@ -6,9 +6,15 @@ import os from 'node:os';
 import { Agent, request } from 'undici';
 import { config } from '../config.js';
 import { log } from '../log.js';
-import { Repository, type OutboxEvent } from '../persistence/repository.js';
+import {
+  Repository,
+  type OutboxEvent,
+} from '../persistence/repository.js';
 import { signRequest } from '../security/signature.js';
-import { isAllowedServiceUrl, isProhibitedAddress } from '../security/url-policy.js';
+import {
+  isAllowedServiceUrl,
+  isProhibitedAddress,
+} from '../security/url-policy.js';
 
 function readOptional(path: string): Buffer | undefined {
   return path ? fs.readFileSync(path) : undefined;
@@ -62,13 +68,16 @@ function correlationId(event: OutboxEvent): string | undefined {
   return typeof value === 'string' && value ? value : undefined;
 }
 
-async function deliver(event: OutboxEvent): Promise<void> {
+export async function deliverOutboxEvent(event: OutboxEvent): Promise<void> {
   if (!config.externalDeliveryEnabled) throw new Error('external_delivery_disabled');
   if (!config.middlewareBaseUrl) throw new Error('middleware_base_url_missing');
   if (!config.outboundBearerToken) throw new Error('outbound_bearer_token_missing');
   if (!config.outboundHmacSecret) throw new Error('outbound_hmac_secret_missing');
 
-  const target = new URL(event.destination_path, `${config.middlewareBaseUrl}/`).toString();
+  const target = new URL(
+    event.destination_path,
+    `${config.middlewareBaseUrl}/`,
+  ).toString();
   const body = JSON.stringify(event.payload);
   const timestamp = String(Math.floor(Date.now() / 1000));
   const scopes = deliveryScopes(event);
@@ -112,7 +121,9 @@ async function deliver(event: OutboxEvent): Promise<void> {
     });
     const responseBody = await response.body.text();
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw new Error(`middleware_delivery_${response.statusCode}:${responseBody.slice(0, 500)}`);
+      throw new Error(
+        `middleware_delivery_${response.statusCode}:${responseBody.slice(0, 500)}`,
+      );
     }
   } finally {
     await dispatcher.close();
@@ -145,15 +156,38 @@ export async function startDeliveryWorker(
 
       for (const event of events) {
         try {
-          await deliver(event);
-          await repository.markOutboxDelivered(event.id, workerId, lockToken);
+          await deliverOutboxEvent(event);
+          const acknowledged = await repository.markOutboxDelivered(
+            event.id,
+            workerId,
+            lockToken,
+          );
+          if (!acknowledged) {
+            log('warn', 'outbox_delivery_acknowledgement_stale', {
+              eventId: event.id,
+              workerId,
+            });
+            continue;
+          }
           log('info', 'outbox_delivered', {
             eventId: event.id,
             eventType: event.event_type,
           });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          await repository.markOutboxFailed(event.id, workerId, lockToken, message);
+          const acknowledged = await repository.markOutboxFailed(
+            event.id,
+            workerId,
+            lockToken,
+            message,
+          );
+          if (!acknowledged) {
+            log('warn', 'outbox_failure_acknowledgement_stale', {
+              eventId: event.id,
+              workerId,
+            });
+            continue;
+          }
           log('warn', 'outbox_delivery_failed', {
             eventId: event.id,
             eventType: event.event_type,
