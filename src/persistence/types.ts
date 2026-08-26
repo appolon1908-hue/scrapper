@@ -16,6 +16,10 @@ export type JobRecord = {
   error_code: string | null;
   error_message: string | null;
   cancellation_requested: boolean;
+  worker_id: string | null;
+  run_token: string | null;
+  heartbeat_at: Date | null;
+  lease_expires_at: Date | null;
   version: number;
   created_at: Date;
   updated_at: Date;
@@ -33,6 +37,9 @@ export type OutboxEvent = {
   payload: Record<string, unknown>;
   idempotency_key: string;
   attempts: number;
+  locked_at: Date | null;
+  locked_by: string | null;
+  lock_token: string | null;
 };
 
 export type CreateJobInput = {
@@ -41,6 +48,11 @@ export type CreateJobInput = {
   correlationId: string;
   idempotencyKey: string;
   payload: CrawlJobRequest;
+};
+
+export type QueuedJobDispatch = {
+  id: string;
+  version: number;
 };
 
 export type BusinessResult = {
