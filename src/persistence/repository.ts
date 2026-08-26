@@ -9,19 +9,9 @@ import { JobRepository } from './job-repository.js';
 import { LifecycleRepository } from './lifecycle-repository.js';
 import { OperationsRepository } from './operations-repository.js';
 import { OutboxRepository } from './outbox-repository.js';
-import type {
-  CreateJobInput,
-  JobRecord,
-  OutboxEvent,
-  QueuedJobDispatch,
-} from './types.js';
+import type { CreateJobInput, JobRecord, OutboxEvent, QueuedJobDispatch } from './types.js';
 
-export type {
-  CreateJobInput,
-  JobRecord,
-  OutboxEvent,
-  QueuedJobDispatch,
-} from './types.js';
+export type { CreateJobInput, JobRecord, OutboxEvent, QueuedJobDispatch } from './types.js';
 
 export class Repository {
   constructor(
@@ -124,20 +114,11 @@ export class Repository {
     return this.businesses.listForJob(tenantId, jobId, query);
   }
 
-  finalizeJob(
-    id: string,
-    runToken: string,
-    progress: Record<string, unknown>,
-  ): Promise<void> {
+  finalizeJob(id: string, runToken: string, progress: Record<string, unknown>): Promise<void> {
     return this.lifecycle.finalizeJob(id, runToken, progress);
   }
 
-  failJob(
-    id: string,
-    runToken: string,
-    errorCode: string,
-    errorMessage: string,
-  ): Promise<boolean> {
+  failJob(id: string, runToken: string, errorCode: string, errorMessage: string): Promise<boolean> {
     return this.lifecycle.failJob(id, runToken, errorCode, errorMessage);
   }
 
