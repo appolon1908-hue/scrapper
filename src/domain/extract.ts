@@ -157,7 +157,11 @@ function addressFromObject(value: unknown): string | null {
   return result || null;
 }
 
-function extractOfficers(values: JsonObject[], sourceUrl: string, visibleText: string): PublicOfficer[] {
+function extractOfficers(
+  values: JsonObject[],
+  sourceUrl: string,
+  visibleText: string,
+): PublicOfficer[] {
   const officers: PublicOfficer[] = [];
   const candidates: unknown[] = [];
   for (const object of values) {
@@ -334,7 +338,9 @@ export function extractBusinessPage(html: string, sourceUrl: string): PageExtrac
         evidence: evidence(sourceUrl, 'telephone-link'),
       });
   });
-  for (const match of visibleText.matchAll(/(?:\+?\d[\d .()/-]{7,}\d)(?:\s*(?:ext\.?|x)\s*\d{1,6})?/gi)) {
+  for (const match of visibleText.matchAll(
+    /(?:\+?\d[\d .()/-]{7,}\d)(?:\s*(?:ext\.?|x)\s*\d{1,6})?/gi,
+  )) {
     const normalized = normalizePhone(match[0]);
     if (normalized)
       phones.push({
@@ -377,7 +383,9 @@ export function extractBusinessPage(html: string, sourceUrl: string): PageExtrac
     evidence: evidence(sourceUrl, 'public-ein-label'),
   }));
   const path = new URL(sourceUrl).pathname.toLowerCase();
-  const likelyContactPage = /\b(contact|about|team|leadership|company|staff|management)\b/.test(path);
+  const likelyContactPage = /\b(contact|about|team|leadership|company|staff|management)\b/.test(
+    path,
+  );
   const scriptCount = $('script[src]').length;
   const requiresBrowserFallback = visibleText.length < 250 && scriptCount >= 5;
 

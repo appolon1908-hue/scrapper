@@ -1,8 +1,4 @@
-import type {
-  FastifyInstance,
-  FastifyReply,
-  FastifyRequest,
-} from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { JobCommandService } from '../../application/job-command-service.js';
 import { config } from '../../config.js';
 import {
@@ -50,11 +46,7 @@ function commandContext(request: FastifyRequest): {
   return {
     tenantId: request.principal.tenantId,
     actorId: request.principal.clientId,
-    correlationId: requiredHeader(
-      request,
-      'x-correlation-id',
-      'valid_correlation_id_required',
-    ),
+    correlationId: requiredHeader(request, 'x-correlation-id', 'valid_correlation_id_required'),
   };
 }
 
@@ -81,11 +73,7 @@ export async function registerJobRoutes(
       'idempotency-key',
       'valid_idempotency_key_required',
     );
-    const created = await commands.create(
-      commandContext(request),
-      idempotencyKey,
-      parsed.data,
-    );
+    const created = await commands.create(commandContext(request), idempotencyKey, parsed.data);
     return reply.code(created.duplicate ? 200 : 202).send({
       ...jobView(created.job),
       duplicate: created.duplicate,
@@ -101,10 +89,7 @@ export async function registerJobRoutes(
     if (!parsed.success) {
       throw new ApiError(400, 'invalid_query', parsed.error.issues);
     }
-    const result = await repository.listJobs(
-      request.principal.tenantId,
-      parsed.data,
-    );
+    const result = await repository.listJobs(request.principal.tenantId, parsed.data);
     return {
       items: result.items.map(jobView),
       next_cursor: result.nextCursor,
@@ -113,10 +98,7 @@ export async function registerJobRoutes(
 
   app.get('/api/v2/jobs/:id', async (request, reply) => {
     if (!(await requireScope(request, reply, 'jobs:read'))) return;
-    const job = await repository.getJob(
-      request.principal.tenantId,
-      uuidParam(request, 'id'),
-    );
+    const job = await repository.getJob(request.principal.tenantId, uuidParam(request, 'id'));
     return job ? jobView(job) : reply.code(404).send({ error: 'not_found' });
   });
 
@@ -139,13 +121,8 @@ export async function registerJobRoutes(
 
   const cancelJob = async (request: FastifyRequest, reply: FastifyReply) => {
     if (!(await requireScope(request, reply, 'jobs:cancel'))) return;
-    const job = await commands.cancel(
-      commandContext(request),
-      uuidParam(request, 'id'),
-    );
-    return job
-      ? jobView(job)
-      : reply.code(404).send({ error: 'not_found_or_not_cancellable' });
+    const job = await commands.cancel(commandContext(request), uuidParam(request, 'id'));
+    return job ? jobView(job) : reply.code(404).send({ error: 'not_found_or_not_cancellable' });
   };
 
   app.post('/api/v2/jobs/:id/cancel', cancelJob);
@@ -153,10 +130,7 @@ export async function registerJobRoutes(
 
   const retryJob = async (request: FastifyRequest, reply: FastifyReply) => {
     if (!(await requireScope(request, reply, 'jobs:write'))) return;
-    const job = await commands.retry(
-      commandContext(request),
-      uuidParam(request, 'id'),
-    );
+    const job = await commands.retry(commandContext(request), uuidParam(request, 'id'));
     return job
       ? reply.code(202).send(jobView(job))
       : reply.code(409).send({ error: 'job_not_retryable' });

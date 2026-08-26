@@ -1,9 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {
-  CrawlJobRequestSchema,
-  ResultListQuerySchema,
-} from '../dist/domain/schemas.js';
+import { CrawlJobRequestSchema, ResultListQuerySchema } from '../dist/domain/schemas.js';
 
 test('crawl job request applies bounded defaults', () => {
   const parsed = CrawlJobRequestSchema.parse({

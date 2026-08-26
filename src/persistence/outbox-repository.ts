@@ -47,13 +47,7 @@ export class OutboxRepository {
              available_at=now()+($5*interval '1 second'),
              locked_at=null,locked_by=null,updated_at=now()
          where id=$1`,
-        [
-          id,
-          dead ? 'dead_letter' : 'pending',
-          attempts,
-          error.slice(0, 2000),
-          delaySeconds,
-        ],
+        [id, dead ? 'dead_letter' : 'pending', attempts, error.slice(0, 2000), delaySeconds],
       );
     });
   }

@@ -46,14 +46,24 @@ async function assertPublicProviderUrl(rawUrl) {
 }
 
 function buildQuery({ query, location, industry, countryCode }) {
-  return [query, industry, location, countryCode, '-site:facebook.com', '-site:linkedin.com', '-site:yelp.com']
+  return [
+    query,
+    industry,
+    location,
+    countryCode,
+    '-site:facebook.com',
+    '-site:linkedin.com',
+    '-site:yelp.com',
+  ]
     .filter(Boolean)
     .join(' ');
 }
 
 function hostBlocked(hostname) {
   const host = hostname.toLowerCase().replace(/^www\./, '');
-  return config.searchBlockedHosts.some((blocked) => host === blocked || host.endsWith(`.${blocked}`));
+  return config.searchBlockedHosts.some(
+    (blocked) => host === blocked || host.endsWith(`.${blocked}`),
+  );
 }
 
 function officialCandidate(rawUrl) {
@@ -161,7 +171,11 @@ async function customSearch(input) {
   if (response.statusCode < 200 || response.statusCode >= 300) {
     throw new Error(`custom_search_${response.statusCode}`);
   }
-  const items = Array.isArray(body?.results) ? body.results : Array.isArray(body?.items) ? body.items : [];
+  const items = Array.isArray(body?.results)
+    ? body.results
+    : Array.isArray(body?.items)
+      ? body.items
+      : [];
   return {
     providerRequestId: body?.request_id || body?.id || null,
     results: items.map((item) => ({
@@ -177,7 +191,8 @@ export async function discoverBusinesses(input) {
   if (!config.searchApiKey) throw new Error('search_api_key_missing');
   const provider = String(input.provider || config.searchProvider).toLowerCase();
   const country = String(input.countryCode || 'US').toLowerCase();
-  if (!config.searchAllowedCountries.includes(country)) throw new Error('search_country_not_allowed');
+  if (!config.searchAllowedCountries.includes(country))
+    throw new Error('search_country_not_allowed');
 
   const response =
     provider === 'bing'
@@ -199,7 +214,9 @@ export async function discoverBusinesses(input) {
     if (seen.has(domain)) continue;
     seen.add(domain);
     companies.push({
-      business_name: String(result.title || '').replace(/\s+[|–—-].*$/, '').slice(0, 300),
+      business_name: String(result.title || '')
+        .replace(/\s+[|–—-].*$/, '')
+        .slice(0, 300),
       website,
       country_code: String(input.countryCode || 'US').toUpperCase(),
       external_reference: `search:${provider}:${domain}`,

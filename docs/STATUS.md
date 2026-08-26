@@ -32,14 +32,14 @@ that the service is running on a server or reachable through Kong/Caddy.
 
 ## Capability truth table
 
-| Capability | Source status | Live status |
-|---|---|---|
-| Crawl job API | implemented | not verified |
-| HTTP/Playwright crawl worker | implemented | not verified |
-| Outbound middleware outbox | implemented, disabled by default | not verified |
-| n8n reverse-command inbox | not implemented | not live |
-| Odoo CRM adapter | not implemented | not live |
-| Registry/EIN provider | not implemented | not live |
-| Vue admin console/forms | not implemented | not live |
-| Kong/Caddy routes | external configuration required | not verified |
-| Production deployment | no evidence | not live |
+| Capability                   | Source status                    | Live status  |
+| ---------------------------- | -------------------------------- | ------------ |
+| Crawl job API                | implemented                      | not verified |
+| HTTP/Playwright crawl worker | implemented                      | not verified |
+| Outbound middleware outbox   | implemented, disabled by default | not verified |
+| n8n reverse-command inbox    | not implemented                  | not live     |
+| Odoo CRM adapter             | not implemented                  | not live     |
+| Registry/EIN provider        | not implemented                  | not live     |
+| Vue admin console/forms      | not implemented                  | not live     |
+| Kong/Caddy routes            | external configuration required  | not verified |
+| Production deployment        | no evidence                      | not live     |

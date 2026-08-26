@@ -5,15 +5,9 @@ import os from 'node:os';
 import { Agent, request } from 'undici';
 import { config } from '../config.js';
 import { log } from '../log.js';
-import {
-  Repository,
-  type OutboxEvent,
-} from '../persistence/repository.js';
+import { Repository, type OutboxEvent } from '../persistence/repository.js';
 import { signRequest } from '../security/signature.js';
-import {
-  isAllowedServiceUrl,
-  isProhibitedAddress,
-} from '../security/url-policy.js';
+import { isAllowedServiceUrl, isProhibitedAddress } from '../security/url-policy.js';
 
 function readOptional(path: string): Buffer | undefined {
   return path ? fs.readFileSync(path) : undefined;
@@ -73,10 +67,7 @@ async function deliver(event: OutboxEvent): Promise<void> {
   if (!config.outboundBearerToken) throw new Error('outbound_bearer_token_missing');
   if (!config.outboundHmacSecret) throw new Error('outbound_hmac_secret_missing');
 
-  const target = new URL(
-    event.destination_path,
-    `${config.middlewareBaseUrl}/`,
-  ).toString();
+  const target = new URL(event.destination_path, `${config.middlewareBaseUrl}/`).toString();
   const body = JSON.stringify(event.payload);
   const timestamp = String(Math.floor(Date.now() / 1000));
   const scopes = deliveryScopes(event);
@@ -120,9 +111,7 @@ async function deliver(event: OutboxEvent): Promise<void> {
     });
     const responseBody = await response.body.text();
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw new Error(
-        `middleware_delivery_${response.statusCode}:${responseBody.slice(0, 500)}`,
-      );
+      throw new Error(`middleware_delivery_${response.statusCode}:${responseBody.slice(0, 500)}`);
     }
   } finally {
     await dispatcher.close();

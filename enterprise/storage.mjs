@@ -234,10 +234,10 @@ export async function listEnterpriseJobs(tenantId, { status, limit = 50, cursor 
 }
 
 export async function getEnterpriseJob(tenantId, id) {
-  const result = await pool.query(
-    `SELECT * FROM enterprise_jobs WHERE tenant_id=$1 AND id=$2`,
-    [tenantId, id],
-  );
+  const result = await pool.query(`SELECT * FROM enterprise_jobs WHERE tenant_id=$1 AND id=$2`, [
+    tenantId,
+    id,
+  ]);
   return result.rows[0] || null;
 }
 
@@ -329,7 +329,9 @@ export async function targetCancellationRequested(targetId, leaseToken) {
 function canonicalKey(tenantId, record, domain) {
   return crypto
     .createHash('sha256')
-    .update(`${tenantId}|${domain}|${String(record?.legalName || record?.displayName || '').toLowerCase()}`)
+    .update(
+      `${tenantId}|${domain}|${String(record?.legalName || record?.displayName || '').toLowerCase()}`,
+    )
     .digest('hex');
 }
 
@@ -424,7 +426,13 @@ async function reconcileJobWithClient(client, tenantId, jobId) {
   );
   if (!totalResult.rowCount) return;
   const total = Number(totalResult.rows[0].total_targets);
-  let status = active ? 'running' : queued ? 'queued' : total && terminal >= total ? 'completed' : 'running';
+  let status = active
+    ? 'running'
+    : queued
+      ? 'queued'
+      : total && terminal >= total
+        ? 'completed'
+        : 'running';
   if (terminal >= total && total > 0) {
     if (cancelled === total) status = 'cancelled';
     else if (completed === 0 && failed > 0) status = 'failed';

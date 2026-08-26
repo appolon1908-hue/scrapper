@@ -44,7 +44,16 @@ function requireWhen(enabled, names) {
 
 const nodeEnv = process.env.NODE_ENV || 'development';
 const role = process.env.ENTERPRISE_ROLE || 'api';
-if (!['api', 'target-worker', 'discovery-worker', 'delivery-worker', 'privacy-worker', 'all'].includes(role)) {
+if (
+  ![
+    'api',
+    'target-worker',
+    'discovery-worker',
+    'delivery-worker',
+    'privacy-worker',
+    'all',
+  ].includes(role)
+) {
   throw new Error('invalid_environment:ENTERPRISE_ROLE');
 }
 
@@ -77,7 +86,9 @@ export const config = Object.freeze({
   leaseSeconds: integer('ENTERPRISE_LEASE_SECONDS', 120, 30, 1800),
   maxTargetAttempts: integer('MAX_TARGET_ATTEMPTS', 4, 1, 20),
   tenantClaim: process.env.KEYCLOAK_TENANT_CLAIM || 'tenant_id',
-  keycloakIssuer: (process.env.KEYCLOAK_ISSUER || 'https://auth.codestra.co/realms/codestra').replace(/\/$/, ''),
+  keycloakIssuer: (
+    process.env.KEYCLOAK_ISSUER || 'https://auth.codestra.co/realms/codestra'
+  ).replace(/\/$/, ''),
   keycloakAudience: process.env.KEYCLOAK_AUDIENCE || 'codestra-scrapper-admin',
   keycloakClientId: process.env.KEYCLOAK_CLIENT_ID || 'codestra-scrapper-admin',
   keycloakClientSecret: secret('KEYCLOAK_CLIENT_SECRET_FILE', 'KEYCLOAK_CLIENT_SECRET'),
@@ -125,6 +136,8 @@ export const config = Object.freeze({
 
 if (nodeEnv === 'production') {
   if (!config.coreApiToken) throw new Error('SCRAPPER_CORE_TOKEN is required in production');
-  if (!config.einFingerprintPepper) throw new Error('EIN_FINGERPRINT_PEPPER is required in production');
-  if (!config.sessionEncryptionKey) throw new Error('SESSION_ENCRYPTION_KEY is required in production');
+  if (!config.einFingerprintPepper)
+    throw new Error('EIN_FINGERPRINT_PEPPER is required in production');
+  if (!config.sessionEncryptionKey)
+    throw new Error('SESSION_ENCRYPTION_KEY is required in production');
 }

@@ -84,5 +84,10 @@ export async function enqueuePrivacyRequest(request) {
 }
 
 export async function closeQueues() {
-  await Promise.all([targetQueue.close(), discoveryQueue.close(), deliveryQueue.close(), privacyQueue.close()]);
+  await Promise.all([
+    targetQueue.close(),
+    discoveryQueue.close(),
+    deliveryQueue.close(),
+    privacyQueue.close(),
+  ]);
 }

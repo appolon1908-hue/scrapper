@@ -23,13 +23,15 @@ import {
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 function log(level, message, fields = {}) {
-  console.log(JSON.stringify({
-    timestamp: new Date().toISOString(),
-    level,
-    message,
-    service: 'codestra-scrapper-enterprise',
-    ...fields,
-  }));
+  console.log(
+    JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level,
+      message,
+      service: 'codestra-scrapper-enterprise',
+      ...fields,
+    }),
+  );
 }
 
 async function coreRequest(path, options = {}) {
@@ -133,7 +135,11 @@ async function fetchChildResult(target, childJobId) {
   const result = await coreRequest(`/api/v2/jobs/${childJobId}/results?limit=100&minConfidence=0`, {
     headers: { 'x-tenant-id': target.tenant_id },
   });
-  const items = Array.isArray(result.items) ? result.items : Array.isArray(result.results) ? result.results : [];
+  const items = Array.isArray(result.items)
+    ? result.items
+    : Array.isArray(result.results)
+      ? result.results
+      : [];
   if (!items.length) {
     throw Object.assign(new Error('child_crawl_no_business_record'), { retryable: false });
   }
@@ -165,7 +171,12 @@ async function processTarget(job) {
   } catch (error) {
     const retryable = error?.retryable !== false;
     const code = error instanceof Error ? error.message : 'target_failed';
-    await failTarget(target, code, error instanceof Error ? error.message : String(error), retryable);
+    await failTarget(
+      target,
+      code,
+      error instanceof Error ? error.message : String(error),
+      retryable,
+    );
     log('warn', 'enterprise_target_failed', {
       targetId: target.id,
       jobId: target.job_id,
@@ -233,13 +244,16 @@ export function startTargetWorker() {
     concurrency: config.targetConcurrency,
     lockDuration: config.leaseSeconds * 1000,
   });
-  const timer = setInterval(() => {
-    releaseStaleTargetLeases()
-      .then((count) => {
-        if (count) log('warn', 'stale_target_leases_released', { count });
-      })
-      .catch((error) => log('error', 'stale_target_release_failed', { error: String(error) }));
-  }, Math.max(30, Math.floor(config.leaseSeconds / 2)) * 1000);
+  const timer = setInterval(
+    () => {
+      releaseStaleTargetLeases()
+        .then((count) => {
+          if (count) log('warn', 'stale_target_leases_released', { count });
+        })
+        .catch((error) => log('error', 'stale_target_release_failed', { error: String(error) }));
+    },
+    Math.max(30, Math.floor(config.leaseSeconds / 2)) * 1000,
+  );
   timer.unref();
   return async () => {
     clearInterval(timer);

@@ -35,7 +35,9 @@ export async function withTransaction<T>(
   }
 }
 
-export async function runMigrations(directory = path.join(process.cwd(), 'migrations')): Promise<void> {
+export async function runMigrations(
+  directory = path.join(process.cwd(), 'migrations'),
+): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       filename text PRIMARY KEY,
@@ -59,10 +61,10 @@ export async function runMigrations(directory = path.join(process.cwd(), 'migrat
         return;
       }
       await client.query(sql);
-      await client.query(
-        'insert into schema_migrations(filename,checksum) values($1,$2)',
-        [filename, checksum],
-      );
+      await client.query('insert into schema_migrations(filename,checksum) values($1,$2)', [
+        filename,
+        checksum,
+      ]);
       log('info', 'migration_applied', { filename });
     });
   }

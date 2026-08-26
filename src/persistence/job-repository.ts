@@ -174,7 +174,6 @@ export class JobRepository {
     );
   }
 
-
   async listQueuedForReconciliation(limit = 100): Promise<string[]> {
     const result = await pool.query<{ id: string }>(
       `select id from crawl_jobs

@@ -3,11 +3,7 @@ import { config } from '../config.js';
 import { runCrawlJob, type CrawlProgress } from '../crawler/run.js';
 import { log } from '../log.js';
 import { Repository } from '../persistence/repository.js';
-import {
-  crawlQueue,
-  enqueueCrawlJob,
-  redisConnection,
-} from '../queues.js';
+import { crawlQueue, enqueueCrawlJob, redisConnection } from '../queues.js';
 
 export async function startCrawlWorker(
   repository = new Repository(),
@@ -30,20 +26,13 @@ export async function startCrawlWorker(
       error: error.message,
     }),
   );
-  worker.on('error', (error) =>
-    log('error', 'crawl_worker_error', { error: error.message }),
-  );
+  worker.on('error', (error) => log('error', 'crawl_worker_error', { error: error.message }));
 
   let stopping = false;
   const reconcile = async (): Promise<void> => {
     while (!stopping) {
       try {
-        const queued = await crawlQueue.getJobs(
-          ['waiting', 'active', 'delayed'],
-          0,
-          500,
-          true,
-        );
+        const queued = await crawlQueue.getJobs(['waiting', 'active', 'delayed'], 0, 500, true);
         const queuedIds = new Set(queued.map((job) => job.data.jobId));
         const missing = await repository.listQueuedForReconciliation(100);
         for (const jobId of missing) {

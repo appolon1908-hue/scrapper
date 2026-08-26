@@ -230,7 +230,10 @@ export async function runCrawlJob(
 
     if (request.browser !== 'http' && browserFallbacks.size > 0) {
       const browserQueue = await RequestQueue.open(`scrapper-browser-${runToken}`);
-      const fallbackLimit = request.browser === 'playwright' ? request.maxPages : Math.max(1, Math.floor(request.maxPages * 0.25));
+      const fallbackLimit =
+        request.browser === 'playwright'
+          ? request.maxPages
+          : Math.max(1, Math.floor(request.maxPages * 0.25));
       for (const [url, userData] of [...browserFallbacks.entries()].slice(0, fallbackLimit)) {
         await browserQueue.addRequest({ url, uniqueKey: `${url}#browser`, userData });
       }

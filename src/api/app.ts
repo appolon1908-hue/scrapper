@@ -7,9 +7,7 @@ import { registerJobRoutes } from './routes/jobs.js';
 import { registerOperationsRoutes } from './routes/operations.js';
 import { registerSystemRoutes } from './routes/system.js';
 
-export async function buildApp(
-  repository = new Repository(),
-): Promise<FastifyInstance> {
+export async function buildApp(repository = new Repository()): Promise<FastifyInstance> {
   const app = Fastify({
     bodyLimit: 1_000_000,
     requestIdHeader: false,

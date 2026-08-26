@@ -33,9 +33,7 @@ export async function registerOperationsRoutes(
         ([status, value]) => `scrapper_queue_jobs{status="${status}"} ${value}`,
       ),
     ];
-    return reply
-      .type('text/plain; version=0.0.4')
-      .send(`${lines.join('\n')}\n`);
+    return reply.type('text/plain; version=0.0.4').send(`${lines.join('\n')}\n`);
   });
 
   app.get('/api/v2/capabilities', async (request, reply) => {

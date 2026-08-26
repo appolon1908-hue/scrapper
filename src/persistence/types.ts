@@ -1,8 +1,4 @@
-import type {
-  BusinessRecord,
-  CrawlJobRequest,
-  JobStatus,
-} from '../domain/schemas.js';
+import type { BusinessRecord, CrawlJobRequest, JobStatus } from '../domain/schemas.js';
 
 export type JobRecord = {
   id: string;

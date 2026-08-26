@@ -91,10 +91,8 @@ export const config = Object.freeze({
   jobConcurrency: integer('JOB_CONCURRENCY', 2, 1, 20),
   perHostRequestsPerSecond: decimal('PER_HOST_REQUESTS_PER_SECOND', 1, 0.1, 10),
   middlewareBaseUrl: (process.env.MIDDLEWARE_BASE_URL || '').replace(/\/$/, ''),
-  middlewareResultsPath:
-    process.env.MIDDLEWARE_RESULTS_PATH || '/api/v2/scraper/results/batches',
-  middlewareEventsPath:
-    process.env.MIDDLEWARE_EVENTS_PATH || '/api/v2/scraper/jobs/events',
+  middlewareResultsPath: process.env.MIDDLEWARE_RESULTS_PATH || '/api/v2/scraper/results/batches',
+  middlewareEventsPath: process.env.MIDDLEWARE_EVENTS_PATH || '/api/v2/scraper/jobs/events',
   outboundAllowedHosts: list('OUTBOUND_ALLOWED_HOSTS'),
   outboundHmacSecret: readSecret('OUTBOUND_HMAC_SECRET_FILE', 'OUTBOUND_HMAC_SECRET'),
   outboundBearerToken: readSecret('OUTBOUND_BEARER_TOKEN_FILE', 'OUTBOUND_BEARER_TOKEN'),

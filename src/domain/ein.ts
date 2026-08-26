@@ -29,7 +29,10 @@ export function findPublicEinCandidates(text: string): string[] {
   return [...new Set(candidates)];
 }
 
-export function compareEin(observed: string | null, known: string | undefined): 'verified' | 'mismatch' | 'manual_review' {
+export function compareEin(
+  observed: string | null,
+  known: string | undefined,
+): 'verified' | 'mismatch' | 'manual_review' {
   if (!known) return 'manual_review';
   const observedNormalized = observed ? normalizeEin(observed) : null;
   const knownNormalized = normalizeEin(known);

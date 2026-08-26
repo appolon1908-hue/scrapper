@@ -121,7 +121,8 @@ function normalizeWebsite(raw) {
   const url = new URL(value);
   if (!['http:', 'https:'].includes(url.protocol)) throw new Error('website_http_required');
   if (url.username || url.password) throw new Error('website_credentials_forbidden');
-  if (![80, 443, ''].includes(url.port && Number(url.port))) throw new Error('website_port_forbidden');
+  if (![80, 443, ''].includes(url.port && Number(url.port)))
+    throw new Error('website_port_forbidden');
   url.hash = '';
   url.hostname = url.hostname.toLowerCase();
   url.pathname = url.pathname === '/' ? '/' : url.pathname.replace(/\/+$/, '');
@@ -136,9 +137,14 @@ function domainOf(website) {
 }
 
 function normalizeEmail(value) {
-  const email = String(value || '').trim().toLowerCase();
+  const email = String(value || '')
+    .trim()
+    .toLowerCase();
   if (!email) return null;
-  if (email.length > 254 || !/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(email)) {
+  if (
+    email.length > 254 ||
+    !/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(email)
+  ) {
     throw new Error('invalid_email');
   }
   return email;
@@ -183,18 +189,28 @@ export function validateCompanies(input, { maxCompanies = 500 } = {}) {
         continue;
       }
       seenDomains.add(normalizedDomain);
-      const countryCode = String(raw.country_code || raw.countryCode || 'US').trim().toUpperCase();
+      const countryCode = String(raw.country_code || raw.countryCode || 'US')
+        .trim()
+        .toUpperCase();
       if (!/^[A-Z]{2}$/.test(countryCode)) throw new Error('invalid_country_code');
       companies.push({
-        businessName: String(raw.business_name || raw.businessName || raw.name || '').trim().slice(0, 300) || null,
+        businessName:
+          String(raw.business_name || raw.businessName || raw.name || '')
+            .trim()
+            .slice(0, 300) || null,
         website,
         normalizedDomain,
         knownEmail: normalizeEmail(raw.known_email || raw.knownEmail || raw.email),
         knownPhone: normalizePhone(raw.known_phone || raw.knownPhone || raw.phone),
-        knownOwner: String(raw.known_owner || raw.knownOwner || raw.owner || '').trim().slice(0, 300) || null,
+        knownOwner:
+          String(raw.known_owner || raw.knownOwner || raw.owner || '')
+            .trim()
+            .slice(0, 300) || null,
         countryCode,
         externalReference:
-          String(raw.external_reference || raw.externalReference || raw.external_id || '').trim().slice(0, 300) || null,
+          String(raw.external_reference || raw.externalReference || raw.external_id || '')
+            .trim()
+            .slice(0, 300) || null,
         tags: tagsOf(raw),
         sourceRow,
       });

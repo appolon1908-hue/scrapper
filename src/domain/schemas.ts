@@ -33,12 +33,18 @@ export const CrawlJobRequestSchema = z.object({
     .default(config.perHostRequestsPerSecond),
   includePatterns: z.array(z.string().min(1).max(300)).max(50).default([]),
   excludePatterns: z.array(z.string().min(1).max(300)).max(50).default([]),
-  countryCode: z.string().regex(/^[A-Z]{2}$/).default(config.defaultCountryCode),
+  countryCode: z
+    .string()
+    .regex(/^[A-Z]{2}$/)
+    .default(config.defaultCountryCode),
   callbackReference: z.string().max(200).optional(),
   tags: z.record(z.string().max(100), z.string().max(500)).default({}),
   verification: z
     .object({
-      knownEin: z.string().regex(/^\d{2}-?\d{7}$/).optional(),
+      knownEin: z
+        .string()
+        .regex(/^\d{2}-?\d{7}$/)
+        .optional(),
       provider: z.string().max(100).optional(),
       consentReference: z.string().max(200).optional(),
     })
@@ -47,14 +53,7 @@ export const CrawlJobRequestSchema = z.object({
 
 export const JobListQuerySchema = z.object({
   status: z
-    .enum([
-      'queued',
-      'running',
-      'completed',
-      'failed',
-      'cancel_requested',
-      'cancelled',
-    ])
+    .enum(['queued', 'running', 'completed', 'failed', 'cancel_requested', 'cancelled'])
     .optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   cursor: z.string().max(500).optional(),
@@ -109,12 +108,7 @@ export type BusinessRecord = {
   officers: PublicOfficer[];
   einMasked: string | null;
   einFingerprint: string | null;
-  einStatus:
-    | 'not_observed'
-    | 'observed_public'
-    | 'verified'
-    | 'mismatch'
-    | 'manual_review';
+  einStatus: 'not_observed' | 'observed_public' | 'verified' | 'mismatch' | 'manual_review';
   confidence: number;
   evidence: Record<string, Evidence[]>;
   firstSeenAt: string;

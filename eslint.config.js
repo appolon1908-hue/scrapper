@@ -9,8 +9,8 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
-      'no-console': 'off'
-    }
+      'no-console': 'off',
+    },
   },
-  { ignores: ['dist/**', 'node_modules/**', 'release/**'] }
+  { ignores: ['dist/**', 'node_modules/**', 'release/**'] },
 );

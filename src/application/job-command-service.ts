@@ -1,9 +1,6 @@
 import type { CrawlJobRequest } from '../domain/schemas.js';
 import { log } from '../log.js';
-import {
-  Repository,
-  type JobRecord,
-} from '../persistence/repository.js';
+import { Repository, type JobRecord } from '../persistence/repository.js';
 import { enqueueCrawlJob } from '../queues.js';
 
 export type CommandContext = {
