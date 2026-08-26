@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import dns from 'node:dns/promises';
 import fs from 'node:fs';
 import net from 'node:net';
@@ -67,7 +68,7 @@ function correlationId(event: OutboxEvent): string | undefined {
   return typeof value === 'string' && value ? value : undefined;
 }
 
-async function deliver(event: OutboxEvent): Promise<void> {
+export async function deliverOutboxEvent(event: OutboxEvent): Promise<void> {
   if (!config.externalDeliveryEnabled) throw new Error('external_delivery_disabled');
   if (!config.middlewareBaseUrl) throw new Error('middleware_base_url_missing');
   if (!config.outboundBearerToken) throw new Error('outbound_bearer_token_missing');
@@ -146,7 +147,8 @@ export async function startDeliveryWorker(
       if (staleCounter++ % 30 === 0) {
         await repository.releaseStaleOutboxLocks();
       }
-      const events = await repository.claimOutbox(workerId, 20);
+      const lockToken = crypto.randomUUID();
+      const events = await repository.claimOutbox(workerId, lockToken, 20);
       if (!events.length) {
         await new Promise((resolve) => setTimeout(resolve, 1_000));
         continue;
@@ -154,15 +156,38 @@ export async function startDeliveryWorker(
 
       for (const event of events) {
         try {
-          await deliver(event);
-          await repository.markOutboxDelivered(event.id);
+          await deliverOutboxEvent(event);
+          const acknowledged = await repository.markOutboxDelivered(
+            event.id,
+            workerId,
+            lockToken,
+          );
+          if (!acknowledged) {
+            log('warn', 'outbox_delivery_acknowledgement_stale', {
+              eventId: event.id,
+              workerId,
+            });
+            continue;
+          }
           log('info', 'outbox_delivered', {
             eventId: event.id,
             eventType: event.event_type,
           });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          await repository.markOutboxFailed(event.id, message);
+          const acknowledged = await repository.markOutboxFailed(
+            event.id,
+            workerId,
+            lockToken,
+            message,
+          );
+          if (!acknowledged) {
+            log('warn', 'outbox_failure_acknowledgement_stale', {
+              eventId: event.id,
+              workerId,
+            });
+            continue;
+          }
           log('warn', 'outbox_delivery_failed', {
             eventId: event.id,
             eventType: event.event_type,
