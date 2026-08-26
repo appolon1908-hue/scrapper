@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { CheerioCrawler } from '@crawlee/cheerio';
 import { NonRetryableError, RequestQueue } from '@crawlee/core';
 import { PlaywrightCrawler } from '@crawlee/playwright';
@@ -8,6 +9,7 @@ import { resolveBusinessRecord } from '../domain/entity-resolution.js';
 import type { CrawlJobRequest } from '../domain/schemas.js';
 import { log } from '../log.js';
 import { Repository } from '../persistence/repository.js';
+import type { CrawlQueuePayload } from '../queues.js';
 import {
   assertPublicHttpUrl,
   normalizeUrl,
@@ -25,6 +27,12 @@ class CrawlCancelledError extends Error {
 class CrawlLimitError extends Error {
   constructor(message: string) {
     super(message);
+  }
+}
+
+class CrawlLeaseLostError extends Error {
+  constructor() {
+    super('stale_worker_lease');
   }
 }
 
@@ -53,35 +61,8 @@ function pageHtml(serialize: () => string | null, body: string | Buffer | undefi
   return typeof body === 'string' ? body : body?.toString('utf8') || '';
 }
 
-async function ensureContinuable(
-  repository: Repository,
-  jobId: string,
-  deadline: number,
-): Promise<void> {
-  if (Date.now() > deadline) throw new CrawlLimitError('job_runtime_limit_exceeded');
-  if (await repository.cancellationRequested(jobId)) throw new CrawlCancelledError();
-}
-
-export async function runCrawlJob(
-  bullJob: Job<{ jobId: string }, unknown, 'crawl'>,
-  repository = new Repository(),
-): Promise<CrawlProgress> {
-  const jobId = bullJob.data.jobId;
-  const job = await repository.getJobForWorker(jobId);
-  if (!job) throw new NonRetryableError('job_not_found');
-  const request = job.payload as CrawlJobRequest;
-  if (!(await repository.markRunning(jobId))) {
-    return {
-      pagesProcessed: 0,
-      pagesFailed: 0,
-      pagesDeniedByRobots: 0,
-      browserFallbacks: 0,
-      companiesResolved: 0,
-      startedAt: new Date().toISOString(),
-    };
-  }
-
-  const progress: CrawlProgress = {
+function emptyProgress(): CrawlProgress {
+  return {
     pagesProcessed: 0,
     pagesFailed: 0,
     pagesDeniedByRobots: 0,
@@ -89,15 +70,88 @@ export async function runCrawlJob(
     companiesResolved: 0,
     startedAt: new Date().toISOString(),
   };
+}
+
+function errorValue(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
+
+export async function runCrawlJob(
+  bullJob: Job<CrawlQueuePayload, unknown, 'crawl'>,
+  repository = new Repository(),
+  workerId = `crawl-worker-${process.pid}`,
+): Promise<CrawlProgress> {
+  const jobId = bullJob.data.jobId;
+  const dispatchVersion = bullJob.data.dispatchVersion;
+  if (!Number.isInteger(dispatchVersion) || dispatchVersion < 1) {
+    log('warn', 'legacy_or_invalid_crawl_dispatch_ignored', {
+      queueJobId: bullJob.id,
+      jobId,
+      dispatchVersion,
+    });
+    return emptyProgress();
+  }
+
+  const runToken = crypto.randomUUID();
+  const job = await repository.claimJobRun(
+    jobId,
+    dispatchVersion,
+    workerId,
+    runToken,
+    config.jobLeaseSeconds,
+  );
+  if (!job) return emptyProgress();
+
+  const request = job.payload as CrawlJobRequest;
+  const progress = emptyProgress();
   const deadline = Date.now() + config.maxJobRuntimeSeconds * 1000;
+  let leaseFailure: Error | null = null;
+  let heartbeatStopped = false;
+  let heartbeatInFlight: Promise<void> = Promise.resolve();
+
+  const heartbeatTimer = setInterval(() => {
+    heartbeatInFlight = heartbeatInFlight
+      .then(async () => {
+        if (heartbeatStopped || leaseFailure) return;
+        const lease = await repository.renewJobLease(
+          jobId,
+          runToken,
+          progress,
+          config.jobLeaseSeconds,
+        );
+        if (!lease) {
+          leaseFailure = new CrawlLeaseLostError();
+          return;
+        }
+        if (lease.cancellationRequested) leaseFailure = new CrawlCancelledError();
+      })
+      .catch((error: unknown) => {
+        leaseFailure = errorValue(error);
+      });
+  }, config.jobHeartbeatSeconds * 1000);
+  heartbeatTimer.unref();
+
+  const stopHeartbeat = async (): Promise<void> => {
+    if (heartbeatStopped) return;
+    heartbeatStopped = true;
+    clearInterval(heartbeatTimer);
+    await heartbeatInFlight;
+  };
+
+  const ensureContinuable = async (): Promise<void> => {
+    if (Date.now() > deadline) throw new CrawlLimitError('job_runtime_limit_exceeded');
+    if (leaseFailure) throw leaseFailure;
+  };
+
   const robots = new RobotsCache(config.scraperUserAgent);
   const extractions = new Map<string, PageExtraction[]>();
   const browserFallbacks = new Map<string, UserData>();
-  const runToken = `${jobId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const httpQueue = await RequestQueue.open(`scrapper-http-${runToken}`);
+  const runQueueKey = `${jobId}-${runToken}`;
+  const httpQueue = await RequestQueue.open(`scrapper-http-${runQueueKey}`);
 
   const seedUrls = request.seedUrls.slice(0, request.maxCompanies);
   for (const raw of seedUrls) {
+    await ensureContinuable();
     const url = await assertPublicHttpUrl(raw);
     const normalized = normalizeUrl(url.toString());
     const host = keyForHost(url.hostname);
@@ -144,23 +198,27 @@ export async function runCrawlJob(
     useSessionPool: true,
     persistCookiesPerSession: false,
     preNavigationHooks: [
-      async ({ request }) => {
-        await ensureContinuable(repository, jobId, deadline);
-        await assertPublicHttpUrl(request.url);
-        const decision = await robots.decision(request.url);
+      async ({ request: crawlerRequest }) => {
+        await ensureContinuable();
+        await assertPublicHttpUrl(crawlerRequest.url);
+        const decision = await robots.decision(crawlerRequest.url);
         if (!decision.allowed) {
           progress.pagesDeniedByRobots += 1;
           throw new NonRetryableError('robots_denied');
         }
       },
     ],
-    failedRequestHandler: async ({ request }, error) => {
+    failedRequestHandler: async ({ request: failedRequest }, error) => {
       if (String(error?.message || error).includes('robots_denied')) return;
       progress.pagesFailed += 1;
-      log('warn', 'crawl_page_failed', { jobId, url: request.url, error: String(error) });
+      log('warn', 'crawl_page_failed', {
+        jobId,
+        url: failedRequest.url,
+        error: String(error),
+      });
     },
     requestHandler: async ({ request: crawleeRequest, $, body, response, enqueueLinks }) => {
-      await ensureContinuable(repository, jobId, deadline);
+      await ensureContinuable();
       const userData = crawleeRequest.userData as UserData;
       const loadedUrl = normalizeUrl(crawleeRequest.loadedUrl || crawleeRequest.url);
       await assertPublicHttpUrl(loadedUrl);
@@ -209,7 +267,7 @@ export async function runCrawlJob(
       }
 
       if (progress.pagesProcessed % 10 === 0) {
-        await repository.updateProgress(jobId, progress);
+        await ensureContinuable();
         await bullJob.updateProgress(progress);
       }
     },
@@ -229,8 +287,11 @@ export async function runCrawlJob(
     }
 
     if (request.browser !== 'http' && browserFallbacks.size > 0) {
-      const browserQueue = await RequestQueue.open(`scrapper-browser-${runToken}`);
-      const fallbackLimit = request.browser === 'playwright' ? request.maxPages : Math.max(1, Math.floor(request.maxPages * 0.25));
+      const browserQueue = await RequestQueue.open(`scrapper-browser-${runQueueKey}`);
+      const fallbackLimit =
+        request.browser === 'playwright'
+          ? request.maxPages
+          : Math.max(1, Math.floor(request.maxPages * 0.25));
       for (const [url, userData] of [...browserFallbacks.entries()].slice(0, fallbackLimit)) {
         await browserQueue.addRequest({ url, uniqueKey: `${url}#browser`, userData });
       }
@@ -249,7 +310,7 @@ export async function runCrawlJob(
         },
         preNavigationHooks: [
           async ({ request: browserRequest, page }) => {
-            await ensureContinuable(repository, jobId, deadline);
+            await ensureContinuable();
             await assertPublicHttpUrl(browserRequest.url);
             const decision = await robots.decision(browserRequest.url);
             if (!decision.allowed) throw new NonRetryableError('robots_denied');
@@ -275,7 +336,7 @@ export async function runCrawlJob(
           });
         },
         requestHandler: async ({ request: browserRequest, page, response }) => {
-          await ensureContinuable(repository, jobId, deadline);
+          await ensureContinuable();
           const userData = browserRequest.userData as UserData;
           const loadedUrl = normalizeUrl(page.url() || browserRequest.url);
           await assertPublicHttpUrl(loadedUrl);
@@ -292,23 +353,33 @@ export async function runCrawlJob(
     }
 
     for (const pages of extractions.values()) {
+      await ensureContinuable();
       if (!pages.length) continue;
       const record = resolveBusinessRecord(pages, request, config.einFingerprintPepper);
       await repository.upsertBusiness(job.tenant_id, jobId, record, request.verification);
       progress.companiesResolved += 1;
     }
-    await repository.updateProgress(jobId, progress);
-    await repository.finalizeJob(jobId, progress);
+
+    await ensureContinuable();
+    await stopHeartbeat();
+    if (leaseFailure) throw leaseFailure;
+    await repository.finalizeJob(jobId, runToken, progress);
     return progress;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+  } catch (caught) {
+    await stopHeartbeat();
+    const error = leaseFailure || errorValue(caught);
+    const message = error.message;
     const code =
       error instanceof CrawlCancelledError
         ? 'crawl_cancelled'
         : error instanceof CrawlLimitError
           ? 'crawl_limit_exceeded'
-          : 'crawl_failed';
-    await repository.failJob(jobId, code, message);
+          : error instanceof CrawlLeaseLostError
+            ? 'stale_worker_lease'
+            : 'crawl_failed';
+    if (!(error instanceof CrawlLeaseLostError)) {
+      await repository.failJob(jobId, runToken, code, message);
+    }
     throw error;
   }
 }
