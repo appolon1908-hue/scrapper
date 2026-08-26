@@ -29,8 +29,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22.16.0'
-      - name: Install exact dependencies
-        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Install pinned dependencies and validation toolchain
+        run: npm install --include=dev --ignore-scripts --no-audit --no-fund
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
