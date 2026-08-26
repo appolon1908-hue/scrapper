@@ -135,7 +135,9 @@ attacker_status="$("${COMPOSE[@]}" run --rm --no-deps attacker \
   http://kong:8000/api/v2/health)"
 [[ "${attacker_status}" == '403' ]]
 
-if "${COMPOSE[@]}" port kong 8000 | grep -q .; then
+kong_container_id="$("${COMPOSE[@]}" ps -q kong)"
+if docker inspect --format '{{with (index .NetworkSettings.Ports "8000/tcp")}}{{range .}}{{.HostPort}}{{end}}{{end}}' \
+  "${kong_container_id}" | grep -q '[0-9]'; then
   echo 'ERROR: Kong proxy port is published to the host' >&2
   exit 1
 fi
