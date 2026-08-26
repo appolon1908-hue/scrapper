@@ -1,3 +1,5 @@
+import crypto from 'node:crypto';
+import os from 'node:os';
 import { Worker } from 'bullmq';
 import { config } from '../config.js';
 import { runCrawlJob, type CrawlProgress } from '../crawler/run.js';
@@ -7,14 +9,16 @@ import {
   crawlQueue,
   enqueueCrawlJob,
   redisConnection,
+  type CrawlQueuePayload,
 } from '../queues.js';
 
 export async function startCrawlWorker(
   repository = new Repository(),
 ): Promise<() => Promise<void>> {
-  const worker = new Worker<{ jobId: string }, CrawlProgress, 'crawl'>(
+  const workerId = `${os.hostname()}-${process.pid}-${crypto.randomUUID().slice(0, 8)}`;
+  const worker = new Worker<CrawlQueuePayload, CrawlProgress, 'crawl'>(
     'scrapper-crawl-v2',
-    async (job) => runCrawlJob(job, repository),
+    async (job) => runCrawlJob(job, repository, workerId),
     {
       connection: redisConnection,
       concurrency: config.jobConcurrency,
@@ -38,16 +42,27 @@ export async function startCrawlWorker(
   const reconcile = async (): Promise<void> => {
     while (!stopping) {
       try {
+        const expired = await repository.requeueExpiredJobRuns(100);
+        for (const dispatch of expired) {
+          await enqueueCrawlJob(dispatch.id, dispatch.version);
+          log('warn', 'expired_crawl_lease_requeued', dispatch);
+        }
+
         const queued = await crawlQueue.getJobs(
           ['waiting', 'active', 'delayed'],
           0,
           500,
           true,
         );
-        const queuedIds = new Set(queued.map((job) => job.data.jobId));
+        const queueDispatches = new Set(
+          queued.map((job) => `${job.data.jobId}:${job.data.dispatchVersion}`),
+        );
         const missing = await repository.listQueuedForReconciliation(100);
-        for (const jobId of missing) {
-          if (!queuedIds.has(jobId)) await enqueueCrawlJob(jobId);
+        for (const dispatch of missing) {
+          const key = `${dispatch.id}:${dispatch.version}`;
+          if (!queueDispatches.has(key)) {
+            await enqueueCrawlJob(dispatch.id, dispatch.version);
+          }
         }
       } catch (error) {
         log('warn', 'queue_reconciliation_failed', {
