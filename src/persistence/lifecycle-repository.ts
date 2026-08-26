@@ -6,21 +6,29 @@ import { withTransaction } from './db.js';
 import type { JobRecord } from './types.js';
 
 export class LifecycleRepository {
-  async finalizeJob(id: string, progress: Record<string, unknown>): Promise<void> {
+  async finalizeJob(
+    id: string,
+    runToken: string,
+    progress: Record<string, unknown>,
+  ): Promise<void> {
     await withTransaction(async (client) => {
       const jobResult = await client.query<JobRecord>(
-        'select * from crawl_jobs where id=$1 for update',
-        [id],
+        `select * from crawl_jobs
+         where id=$1 and run_token=$2 and status in ('running','cancel_requested')
+         for update`,
+        [id, runToken],
       );
       const job = jobResult.rows[0];
-      if (!job) throw new Error('job_not_found');
+      if (!job) throw new Error('stale_worker_lease');
 
       if (job.cancellation_requested) {
         await client.query(
           `update crawl_jobs
-           set status='cancelled',progress=$2,completed_at=now(),updated_at=now(),version=version+1
-           where id=$1`,
-          [id, progress],
+           set status='cancelled',progress=$3,completed_at=now(),updated_at=now(),
+               worker_id=null,run_token=null,heartbeat_at=null,lease_expires_at=null,
+               version=version+1
+           where id=$1 and run_token=$2`,
+          [id, runToken, progress],
         );
         await this.insertJobEvent(client, job, 'scraper.job.cancelled', progress);
         return;
@@ -31,8 +39,8 @@ export class LifecycleRepository {
          from job_business_records j
          join business_entities e
            on e.id=j.entity_id and e.tenant_id=j.tenant_id
-         where j.job_id=$1 order by e.id`,
-        [id],
+         where j.job_id=$1 and j.tenant_id=$2 order by e.id`,
+        [id, job.tenant_id],
       );
 
       for (let offset = 0; offset < records.rows.length; offset += config.deliveryBatchSize) {
@@ -70,24 +78,34 @@ export class LifecycleRepository {
       });
       await client.query(
         `update crawl_jobs
-         set status='completed',progress=$2,completed_at=now(),updated_at=now(),version=version+1
-         where id=$1`,
-        [id, progress],
+         set status='completed',progress=$3,completed_at=now(),updated_at=now(),
+             worker_id=null,run_token=null,heartbeat_at=null,lease_expires_at=null,
+             version=version+1
+         where id=$1 and run_token=$2`,
+        [id, runToken, progress],
       );
     });
   }
 
-  async failJob(id: string, errorCode: string, errorMessage: string): Promise<void> {
-    await withTransaction(async (client) => {
+  async failJob(
+    id: string,
+    runToken: string,
+    errorCode: string,
+    errorMessage: string,
+  ): Promise<boolean> {
+    return withTransaction(async (client) => {
       const result = await client.query<JobRecord>(
         `update crawl_jobs
          set status=case when cancellation_requested then 'cancelled' else 'failed' end,
-             error_code=$2,error_message=$3,completed_at=now(),updated_at=now(),version=version+1
-         where id=$1 returning *`,
-        [id, errorCode, errorMessage.slice(0, 2000)],
+             error_code=$3,error_message=$4,completed_at=now(),updated_at=now(),
+             worker_id=null,run_token=null,heartbeat_at=null,lease_expires_at=null,
+             version=version+1
+         where id=$1 and run_token=$2 and status in ('running','cancel_requested')
+         returning *`,
+        [id, runToken, errorCode, errorMessage.slice(0, 2000)],
       );
       const job = result.rows[0];
-      if (!job) return;
+      if (!job) return false;
 
       await this.insertJobEvent(
         client,
@@ -95,6 +113,7 @@ export class LifecycleRepository {
         job.status === 'cancelled' ? 'scraper.job.cancelled' : 'scraper.job.failed',
         { error_code: errorCode },
       );
+      return true;
     });
   }
 
