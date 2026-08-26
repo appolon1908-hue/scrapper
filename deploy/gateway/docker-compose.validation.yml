@@ -47,10 +47,7 @@ services:
 
   caddy:
     image: caddy:2-alpine
-    command:
-      - /bin/sh
-      - -ec
-      - cp /usr/bin/caddy /tmp/caddy && exec /tmp/caddy run --config /etc/caddy/Caddyfile
+    command: [caddy, run, --config, /etc/caddy/Caddyfile]
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./.certs:/certs:ro
@@ -64,6 +61,7 @@ services:
         condition: service_healthy
     read_only: true
     cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
     security_opt: [no-new-privileges:true]
     tmpfs:
       - /config:size=32m,mode=0700
