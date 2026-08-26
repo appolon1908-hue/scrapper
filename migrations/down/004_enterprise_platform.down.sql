@@ -1,0 +1,15 @@
+DROP TABLE IF EXISTS enterprise_audit_events;
+DROP TABLE IF EXISTS enterprise_sessions;
+DROP TABLE IF EXISTS enterprise_auth_states;
+DROP TABLE IF EXISTS enterprise_retention_policies;
+DROP TABLE IF EXISTS enterprise_privacy_requests;
+DROP TABLE IF EXISTS enterprise_suppressions;
+DROP TABLE IF EXISTS enterprise_deliveries;
+DROP TABLE IF EXISTS enterprise_ein_verifications;
+DROP TABLE IF EXISTS enterprise_inbox_messages;
+DROP TABLE IF EXISTS enterprise_review_actions;
+DROP TABLE IF EXISTS enterprise_observations;
+DROP TABLE IF EXISTS enterprise_discovery_requests;
+DROP TABLE IF EXISTS enterprise_targets;
+DROP TABLE IF EXISTS enterprise_entities;
+DROP TABLE IF EXISTS enterprise_jobs;

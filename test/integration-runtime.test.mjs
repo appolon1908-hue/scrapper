@@ -13,19 +13,12 @@ process.env.OUTBOX_LEASE_SECONDS = '30';
 
 const pgModule = await import('pg');
 const { Client } = pgModule.default;
-const {
-  pool,
-  rollbackLastMigration,
-  runMigrations,
-} = await import('../dist/persistence/db.js');
+const { pool, rollbackLastMigration, runMigrations } = await import('../dist/persistence/db.js');
 const { Repository } = await import('../dist/persistence/repository.js');
 const { CrawlJobRequestSchema } = await import('../dist/domain/schemas.js');
-const {
-  closeQueues,
-  crawlQueue,
-  crawlQueueJobId,
-  enqueueCrawlJob,
-} = await import('../dist/queues.js');
+const { closeQueues, crawlQueue, crawlQueueJobId, enqueueCrawlJob } = await import(
+  '../dist/queues.js'
+);
 
 const admin = new Client({ connectionString: process.env.DATABASE_URL });
 await admin.connect();
@@ -36,9 +29,7 @@ async function resetDatabase() {
 }
 
 async function migrationNames() {
-  const result = await pool.query(
-    'select filename from schema_migrations order by filename',
-  );
+  const result = await pool.query('select filename from schema_migrations order by filename');
   return result.rows.map((row) => row.filename);
 }
 
@@ -52,31 +43,35 @@ test('real PostgreSQL and Redis runtime contract', async (t) => {
 
   await resetDatabase();
 
-  await t.test('migrations apply idempotently and latest migration rolls back/reapplies', async () => {
-    await runMigrations();
-    assert.deepEqual(await migrationNames(), [
-      '001_initial.sql',
-      '002_tenant_integrity.sql',
-      '003_runtime_leases.sql',
-    ]);
+  await t.test(
+    'migrations apply idempotently and latest migration rolls back/reapplies',
+    async () => {
+      await runMigrations();
+      assert.deepEqual(await migrationNames(), [
+        '001_initial.sql',
+        '002_tenant_integrity.sql',
+        '003_runtime_leases.sql',
+        '004_enterprise_platform.sql',
+      ]);
 
-    await runMigrations();
-    assert.equal((await migrationNames()).length, 3);
+      await runMigrations();
+      assert.equal((await migrationNames()).length, 4);
 
-    assert.equal(await rollbackLastMigration(), '003_runtime_leases.sql');
-    const removed = await pool.query(
-      `select 1 from information_schema.columns
-       where table_schema='public' and table_name='crawl_jobs' and column_name='run_token'`,
-    );
-    assert.equal(removed.rowCount, 0);
+      assert.equal(await rollbackLastMigration(), '004_enterprise_platform.sql');
+      const removed = await pool.query(
+        `select 1 from information_schema.tables
+       where table_schema='public' and table_name='enterprise_jobs'`,
+      );
+      assert.equal(removed.rowCount, 0);
 
-    await runMigrations();
-    const restored = await pool.query(
-      `select 1 from information_schema.columns
-       where table_schema='public' and table_name='crawl_jobs' and column_name='run_token'`,
-    );
-    assert.equal(restored.rowCount, 1);
-  });
+      await runMigrations();
+      const restored = await pool.query(
+        `select 1 from information_schema.tables
+       where table_schema='public' and table_name='enterprise_jobs'`,
+      );
+      assert.equal(restored.rowCount, 1);
+    },
+  );
 
   const repository = new Repository();
   const payload = CrawlJobRequestSchema.parse({
@@ -170,14 +165,8 @@ test('real PostgreSQL and Redis runtime contract', async (t) => {
     const dispatch = requeued.find((item) => item.id === created.job.id);
     assert.ok(dispatch);
 
-    assert.equal(
-      await repository.renewJobLease(created.job.id, tokenA, {}, 120),
-      null,
-    );
-    await assert.rejects(
-      repository.finalizeJob(created.job.id, tokenA, {}),
-      /stale_worker_lease/,
-    );
+    assert.equal(await repository.renewJobLease(created.job.id, tokenA, {}, 120), null);
+    await assert.rejects(repository.finalizeJob(created.job.id, tokenA, {}), /stale_worker_lease/);
 
     const tokenB = crypto.randomUUID();
     const claimedB = await repository.claimJobRun(
@@ -205,22 +194,15 @@ test('real PostgreSQL and Redis runtime contract', async (t) => {
     const lockB = crypto.randomUUID();
     const claimedA = await repository.claimOutbox('delivery-a', lockA, 10);
     assert.ok(claimedA.some((event) => event.id === eventId));
-    await pool.query(
-      `update outbox_events set locked_at=now()-interval '60 seconds' where id=$1`,
-      [eventId],
-    );
+    await pool.query(`update outbox_events set locked_at=now()-interval '60 seconds' where id=$1`, [
+      eventId,
+    ]);
     assert.ok((await repository.releaseStaleOutboxLocks()) >= 1);
 
     const claimedB = await repository.claimOutbox('delivery-b', lockB, 10);
     assert.ok(claimedB.some((event) => event.id === eventId));
-    assert.equal(
-      await repository.markOutboxDelivered(eventId, 'delivery-a', lockA),
-      false,
-    );
-    assert.equal(
-      await repository.markOutboxDelivered(eventId, 'delivery-b', lockB),
-      true,
-    );
+    assert.equal(await repository.markOutboxDelivered(eventId, 'delivery-a', lockA), false);
+    assert.equal(await repository.markOutboxDelivered(eventId, 'delivery-b', lockB), true);
   });
 
   await t.test('Redis queue dispatch is deterministic for one database version', async () => {
@@ -234,6 +216,7 @@ test('real PostgreSQL and Redis runtime contract', async (t) => {
   });
 
   await t.test('full disposable migration rollback and reapply succeeds', async () => {
+    assert.equal(await rollbackLastMigration(), '004_enterprise_platform.sql');
     assert.equal(await rollbackLastMigration(), '003_runtime_leases.sql');
     assert.equal(await rollbackLastMigration(), '002_tenant_integrity.sql');
     assert.equal(await rollbackLastMigration(), '001_initial.sql');
@@ -245,6 +228,7 @@ test('real PostgreSQL and Redis runtime contract', async (t) => {
       '001_initial.sql',
       '002_tenant_integrity.sql',
       '003_runtime_leases.sql',
+      '004_enterprise_platform.sql',
     ]);
   });
 });
