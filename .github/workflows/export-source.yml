@@ -1,0 +1,33 @@
+name: Export source snapshot
+
+on:
+  push:
+    branches:
+      - 'release/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record source identity
+        run: |
+          git rev-parse HEAD > SOURCE_SHA
+          git status --short > SOURCE_STATUS
+      - name: Create source archive
+        run: |
+          git archive --format=tar.gz --output=scrapper-source.tgz HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scrapper-source-${{ github.sha }}
+          path: |
+            scrapper-source.tgz
+            SOURCE_SHA
+            SOURCE_STATUS
+          if-no-files-found: error
+          retention-days: 3
