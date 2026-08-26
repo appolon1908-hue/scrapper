@@ -1,3 +1,4 @@
+-- Enterprise ingestion schema; sequenced after the production runtime lease migration.
 BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
