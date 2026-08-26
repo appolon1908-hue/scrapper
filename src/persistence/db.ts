@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import pg from 'pg';
@@ -35,7 +36,7 @@ export async function withTransaction<T>(
   }
 }
 
-export async function runMigrations(directory = path.join(process.cwd(), 'migrations')): Promise<void> {
+async function ensureMigrationTable(): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       filename text PRIMARY KEY,
@@ -43,10 +44,16 @@ export async function runMigrations(directory = path.join(process.cwd(), 'migrat
       applied_at timestamptz NOT NULL DEFAULT now()
     )
   `);
-  const files = (await fs.readdir(directory)).filter((name) => name.endsWith('.sql')).sort();
+}
+
+export async function runMigrations(directory = path.join(process.cwd(), 'migrations')): Promise<void> {
+  await ensureMigrationTable();
+  const files = (await fs.readdir(directory))
+    .filter((name) => /^\d+.*\.sql$/.test(name))
+    .sort();
   for (const filename of files) {
     const sql = await fs.readFile(path.join(directory, filename), 'utf8');
-    const checksum = (await import('node:crypto')).createHash('sha256').update(sql).digest('hex');
+    const checksum = crypto.createHash('sha256').update(sql).digest('hex');
     await withTransaction(async (client) => {
       const prior = await client.query<{ checksum: string }>(
         'select checksum from schema_migrations where filename=$1 for update',
@@ -66,4 +73,33 @@ export async function runMigrations(directory = path.join(process.cwd(), 'migrat
       log('info', 'migration_applied', { filename });
     });
   }
+}
+
+export async function rollbackLastMigration(
+  downDirectory = path.join(process.cwd(), 'migrations', 'down'),
+): Promise<string | null> {
+  await ensureMigrationTable();
+  return withTransaction(async (client) => {
+    await client.query('lock table schema_migrations in exclusive mode');
+    const latest = await client.query<{ filename: string }>(
+      'select filename from schema_migrations order by filename desc limit 1',
+    );
+    const filename = latest.rows[0]?.filename;
+    if (!filename) return null;
+
+    const downFilename = filename.replace(/\.sql$/, '.down.sql');
+    let sql: string;
+    try {
+      sql = await fs.readFile(path.join(downDirectory, downFilename), 'utf8');
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT') throw new Error(`migration_down_missing:${downFilename}`);
+      throw error;
+    }
+
+    await client.query(sql);
+    await client.query('delete from schema_migrations where filename=$1', [filename]);
+    log('info', 'migration_rolled_back', { filename });
+    return filename;
+  });
 }
