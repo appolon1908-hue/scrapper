@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import dns from 'node:dns/promises';
 import fs from 'node:fs';
 import net from 'node:net';
@@ -135,7 +136,8 @@ export async function startDeliveryWorker(
       if (staleCounter++ % 30 === 0) {
         await repository.releaseStaleOutboxLocks();
       }
-      const events = await repository.claimOutbox(workerId, 20);
+      const lockToken = crypto.randomUUID();
+      const events = await repository.claimOutbox(workerId, lockToken, 20);
       if (!events.length) {
         await new Promise((resolve) => setTimeout(resolve, 1_000));
         continue;
@@ -144,14 +146,14 @@ export async function startDeliveryWorker(
       for (const event of events) {
         try {
           await deliver(event);
-          await repository.markOutboxDelivered(event.id);
+          await repository.markOutboxDelivered(event.id, workerId, lockToken);
           log('info', 'outbox_delivered', {
             eventId: event.id,
             eventType: event.event_type,
           });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          await repository.markOutboxFailed(event.id, message);
+          await repository.markOutboxFailed(event.id, workerId, lockToken, message);
           log('warn', 'outbox_delivery_failed', {
             eventId: event.id,
             eventType: event.event_type,
