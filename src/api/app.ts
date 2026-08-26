@@ -216,7 +216,7 @@ export async function buildApp(repository = new Repository()): Promise<FastifyIn
     const id = String((request.params as { id: string }).id);
     const job = await repository.requestCancellation(
       request.principal.tenantId,
-      requestedBy: request.principal.clientId,
+      request.principal.clientId,
       correlationId,
       id,
     );

@@ -17,92 +17,125 @@ async function serviceAgent(rawUrl: string): Promise<Agent> {
   if (!isAllowedServiceUrl(rawUrl, config.outboundAllowedHosts)) {
     throw new Error('outbound_destination_not_allowlisted');
   }
-  const url = new URL(rawU\›
-NÂˆÛÛœİ™\ÛÛ™YH™]š\ÒT
-\›šÜİ˜[YJBˆÈŞÈY™\ÜÎˆ\›šÜİ˜[YK˜[Z[Nˆ™]š\ÒT
-\›šÜİ˜[YJHÈˆˆWBˆˆ]ØZ]œË›ÛÚİ\
-\›šÜİ˜[YKÈ[ˆYK™\˜˜][NˆYHJNÂˆYˆ
-\™\ÛÛ™Y›[™İ
-H›İÈ™]È\œ›ÜŠ	Ûİ]›İ[™Ùœ×Ü™\ÛÛ][Û—Ù˜Z[Y	ÊNÂˆÛÛœİ^XÚ]P[İÙYHÛÛ™šYË›İ]›İ[™[İÙYÜİËœÛÛYJˆ
-Üİ
-HOˆ\›šÜİ˜[YHOOHÜİ\›šÜİ˜[YK™[™ÕÚ]
-‰ÚÜİX
-Kˆ
-NÂˆYˆ
-Y^XÚ]P[İÙY	‰ˆ™\ÛÛ™YœÛÛYJ
-][JHOˆ\Ô›ÚXš]YY™\ÜÊ][K˜Y™\ÜÊJJHÂˆ›İÈ™]È\œ›ÜŠ	Ûİ]›İ[™Üš]˜]WÙ\İ[˜][Û—Ü™Z™XİY	ÊNÂˆBˆÛÛœİ[›™YH™\ÛÛ™YÌHNÂˆ™]\›ˆ™]ÈYÙ[
-ÂˆÛÛ›™XİˆÂˆ‹‹Š™XYÜ[Û˜[
-ÛÛ™šYË›İ]›İ[™ØQš[JHÈÈØNˆ™XYÜ[Û˜[
-ÛÛ™šYË›İ]›İ[™ØQš[JHHˆßJKˆ‹‹Š™XYÜ[Û˜[
-ÛÛ™šYË›İ]›İ[™ÛY[Ù\š[JBˆÈÈÙ\ˆ™XYÜ[Û˜[
-ÛÛ™šYË›İ]›İ[™ÛY[Ù\š[JHBˆˆßJKˆ‹‹Š™XYÜ[Û˜[
-ÛÛ™šYË›İ]›İ[™ÛY[Ù^Qš[JBˆÈÈÙ^Nˆ™XYÜ[Û˜[
-ÛÛ™šYË›İ]›İ[™ÛY[Ù^Qš[JHBˆˆßJKˆ™Z™Xİ[˜]]Üš^™YˆÛÛ™šYË››ÙQ[ˆOOH	Ü›ÙXİ[Û‰ËˆÙ\™\›˜[YNˆ™]š\ÒT
-\›šÜİ˜[YJHÈ[™Yš[™Yˆ\›šÜİ˜[YKˆÛÚİ\ˆ
-ÚÜİ˜[YKÜ[ÛœËØ[˜XÚÊHOˆÂˆYˆ
-Ü[ÛœË˜[
-HØ[˜XÚÊ[Ü[›™YJNÂˆ[ÙHØ[˜XÚÊ[[›™Y˜Y™\ÜË[›™Y™˜[Z[JNÂˆKˆKˆJNÂŸB‚˜\Ş[˜È[˜İ[Ûˆ[]™\Š]™[ˆİ]›Ş]™[
-Nˆ›ÛZ\ÙO›ÚYˆÂˆYˆ
-XÛÛ™šYË™^\›˜[[]™\Q[˜X›Y
-H›İÈ™]È\œ›ÜŠ	Ù^\›˜[Ù[]™\WÙ\ØX›Y	ÊNÂˆYˆ
-XÛÛ™šYË›ZY]Ø\™P˜\ÙU\›
-H›İÈ™]È\œ›ÜŠ	İZY]Ø\™WØ˜\ÙWİ\›ÛZ\ÜÚ[™ÉÊNÂˆYˆ
-XÛÛ™šYË›İ]›İ[™™X\™\•ÚÙ[ŠH›İÈ™]È\œ›ÜŠ	Ûİ]›İ[™Ø™X\™\—İÚÙ[—ÛZ\ÜÚ[™ÉÊNÂˆÛÛœİ\™Ù]H™]ÈT“
-]™[™\İ[˜][Û—Ü]	ØÛÛ™šYË›ZY]Ø\™P˜\ÙU\›KØ
-KÔİš[™Ê
-NÂˆÛÛœİ›ÙHH”ÓÓ‹œİš[™ÚYJ]™[œ^[ØY
-NÂˆÛÛœİ[Y\İ[\Hİš[™ÊX]™›ÛÜŠ]K››İÊ
-HÈL
-JNÂˆÛÛœİØÛÜ\ÈHÉÜØÜ˜\\‹œ™\İ[ËÜš]I×NÂˆÛÛœİÚYÛ˜]\™HHÚYÛ”™\]Y\İ
-ÛÛ™šYË›İ]›İ[™XXÔÙXÜ™]ÂˆY]Ùˆ	ÔÔÕ	Ëˆ]ˆ™]ÈT“
-\™Ù]
-Kœ]˜[YH
-È™]ÈT“
-\™Ù]
-KœÙX\˜Úˆ[Y\İ[\ˆ]™[Yˆ]™[šYˆÛİ\˜ÙNˆ	ØÛÙ\İ˜K\ØÜ˜\\‰Ëˆ[˜[Yˆ]™[[˜[ÚYˆY[\İ[˜ŞRÙ^Nˆ]™[šY[\İ[˜ŞWÚÙ^KˆØÛÜ\Ëˆ›ÙKˆJNÂˆÛÛœİ\Ü]Ú\ˆH]ØZ]Ù\šXÙPYÙ[
-\™Ù]
-NÂˆHÂˆÛÛœİ™\ÜÛœÙHH]ØZ]™\]Y\İ
-\™Ù]Âˆ\Ü]Ú\‹ˆY]Ùˆ	ÔÔÕ	Ëˆ›ÙKˆXY\œÕ[Y[İ]ˆMWÌˆ›ÙU[Y[İ]ˆMWÌˆÚYÛ˜[ˆX›ÜÚYÛ˜[[Y[İ]
-ÌÌ
-KˆXY\œÎˆÂˆ]]Üš^˜][Ûˆ™X\™\ˆ	ØÛÛ™šYË›İ]›İ[™™X\™\•ÚÙ[ŸXˆ	ØÛÛ[]\IÎˆ	Ø\XØ][Û‹ÚœÛÛ‰Ëˆ	İ\Ù\‹XYÙ[	ÎˆÛÛ™šYËœØÜ˜\\•\Ù\YÙ[ˆ	Ş\Ûİ\˜ÙK\Ş\İ[IÎˆ	ØÛÙ\İ˜K\ØÜ˜\\‰Ëˆ	Ş\ØÜ˜\\‹\ÚYÛ˜]\™K]™\œÚ[Û‰Îˆ	İŒ‰Ëˆ	Ş\ØÜ˜\\‹][Y\İ[\	Îˆ[Y\İ[\ˆ	Ş\ØÜ˜\\‹Y]™[ZY	Îˆ]™[šYˆ	Ş\ØÜ˜\\‹\ØÛÜ\ÉÎˆØÛÜ\Ëš›Ú[Š	È	ÊKˆ	Ş][˜[ZY	Îˆ]™[[˜[ÚYˆ	ÚY[\İ[˜ŞKZÙ^IÎˆ]™[šY[\İ[˜ŞWÚÙ^Kˆ	Ş\ØÜ˜\\‹\ÚYÛ˜]\™IÎˆÚYÛ˜]\™KˆKˆJNÂˆÛÛœİ™\ÜÛœÙP›ÙHH]ØZ]™\ÜÛœÙK˜›ÙK^
+  const url = new URL(rawUrl);
+  const resolved = net.isIP(url.hostname)
+    ? [{ address: url.hostname, family: net.isIPv4(url.hostname) ? 4 : 6 }]
+    : await dns.lookup(url.hostname, { all: true, verbatim: true });
+  if (!resolved.length) throw new Error('outbound_dns_resolution_failed');
+  const explicitlyAllowed = config.outboundAllowedHosts.some(
+    (host) => url.hostname === host || url.hostname.endsWith(`.${host}`),
+  );
+  if (!explicitlyAllowed && resolved.some((item) => isProhibitedAddress(item.address))) {
+    throw new Error('outbound_private_destination_rejected');
+  }
+  const pinned = resolved[0]!;
+  return new Agent({
+    connect: {
+      ...(readOptional(config.outboundCaFile) ? { ca: readOptional(config.outboundCaFile) } : {}),
+      ...(readOptional(config.outboundClientCertFile)
+        ? { cert: readOptional(config.outboundClientCertFile) }
+        : {}),
+      ...(readOptional(config.outboundClientKeyFile)
+        ? { key: readOptional(config.outboundClientKeyFile) }
+        : {}),
+      rejectUnauthorized: config.nodeEnv === 'production',
+      servername: net.isIP(url.hostname) ? undefined : url.hostname,
+      lookup: (_hostname, options, callback) => {
+        if (options.all) callback(null, [pinned]);
+        else callback(null, pinned.address, pinned.family);
+      },
+    },
+  });
+}
 
-NÂˆYˆ
-™\ÜÛœÙKœİ]\ĞÛÙHŒ™\ÜÛœÙKœİ]\ĞÛÙHHÌ
-HÂˆ›İÈ™]È\œ›ÜŠZY]Ø\™WÙ[]™\WÉÜ™\ÜÛœÙKœİ]\ĞÛÙ_N‰Ü™\ÜÛœÙP›ÙKœÛXÙJL
-_X
-NÂˆBˆHš[˜[HÂˆ]ØZ]\Ü]Ú\‹˜ÛÜÙJ
-NÂˆBŸB‚™^Ü\Ş[˜È[˜İ[Ûˆİ\[]™\UÛÜšÙ\Š™\ÜÚ]ÜHH™]È™\ÜÚ]ÜJ
-JNˆ›ÛZ\ÙO
+async function deliver(event: OutboxEvent): Promise<void> {
+  if (!config.externalDeliveryEnabled) throw new Error('external_delivery_disabled');
+  if (!config.middlewareBaseUrl) throw new Error('middleware_base_url_missing');
+  if (!config.outboundBearerToken) throw new Error('outbound_bearer_token_missing');
+  const target = new URL(event.destination_path, `${config.middlewareBaseUrl}/`).toString();
+  const body = JSON.stringify(event.payload);
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const scopes = ['scraper.results.write'];
+  const signature = signRequest(config.outboundHmacSecret, {
+    method: 'POST',
+    path: new URL(target).pathname + new URL(target).search,
+    timestamp,
+    eventId: event.id,
+    source: 'codestra-scrapper',
+    tenantId: event.tenant_id,
+    idempotencyKey: event.idempotency_key,
+    scopes,
+    body,
+  });
+  const dispatcher = await serviceAgent(target);
+  try {
+    const response = await request(target, {
+      dispatcher,
+      method: 'POST',
+      body,
+      headersTimeout: 15_000,
+      bodyTimeout: 15_000,
+      signal: AbortSignal.timeout(30_000),
+      headers: {
+        authorization: `Bearer ${config.outboundBearerToken}`,
+        'content-type': 'application/json',
+        'user-agent': config.scraperUserAgent,
+        'x-source-system': 'codestra-scrapper',
+        'x-scrapper-signature-version': 'v2',
+        'x-scrapper-timestamp': timestamp,
+        'x-scrapper-event-id': event.id,
+        'x-scrapper-scopes': scopes.join(' '),
+        'x-tenant-id': event.tenant_id,
+        'idempotency-key': event.idempotency_key,
+        'x-scrapper-signature': signature,
+      },
+    });
+    const responseBody = await response.body.text();
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw new Error(`middleware_delivery_${response.statusCode}:${responseBody.slice(0, 500)}`);
+    }
+  } finally {
+    await dispatcher.close();
+  }
+}
 
-HOˆ›ÛZ\ÙO›ÚYˆÂˆÛÛœİÛÜšÙ\’YH	ÛÜËšÜİ˜[YJ
-_KIÜ›ØÙ\ÜËœYXÂˆ]İÜ[™ÈH˜[ÙNÂˆ]İ[PÛİ[\ˆHÂˆÛÛœİÛÜH\Ş[˜È
-
-Nˆ›ÛZ\ÙO›ÚYˆOˆÂˆÚ[H
-\İÜ[™ÊHÂˆYˆ
-XÛÛ™šYË™^\›˜[[]™\Q[˜X›Y
-HÂˆ]ØZ]™]È›ÛZ\ÙJ
-™\ÛÛ™JHOˆÙ][Y[İ]
-™\ÛÛ™KWÌ
-JNÂˆÛÛ[YNÂˆBˆYˆ
-İ[PÛİ[\ŠÊÈ	HÌOOH
-H]ØZ]™\ÜÚ]ÜKœ™[X\ÙTİ[Sİ]›ŞØÚÜÊ
-NÂˆÛÛœİ]™[ÈH]ØZ]™\ÜÚ]ÜK˜ÛZ[Sİ]›Ş
-ÛÜšÙ\’YŒ
-NÂˆYˆ
-Y]™[Ë›[™İ
-HÂˆ]ØZ]™]È›ÛZ\ÙJ
-™\ÛÛ™JHOˆÙ][Y[İ]
-™\ÛÛ™KWÌ
-JNÂˆÛÛ[YNÂˆBˆ›Üˆ
-ÛÛœİ]™[Ùˆ]™[ÊHÂˆHÂˆ]ØZ][]™\Š]™[
-NÂˆ]ØZ]™\ÜÚ]ÜK›X\šÓİ]›Ş[]™\™Y
-]™[šY
-NÂˆÙÊ	Ú[™›ÉË	Ûİ]›ŞÙ[]™\™Y	ËÈ]™[Yˆ]™[šY]™[\Nˆ]™[™]™[İ\HJNÂˆHØ]Ú
-\œ›ÜŠHÂˆÛÛœİY\ÜØYÙHH\œ›Üˆ[œİ[˜Ù[Ùˆ\œ›ÜˆÈ\œ›Ü‹›Y\ÜØYÙHˆİš[™Ê\œ›ÜŠNÂˆ]ØZ]™\ÜÚ]ÜK›X\šÓİ]›Ş˜Z[Y
-]™[šYY\ÜØYÙJNÂˆÙÊ	İØ\›‰Ë	Ûİ]›ŞÙ[]™\WÙ˜Z[Y	ËÈ]™[Yˆ]™[šY\œ›ÜˆY\ÜØYÙHJNÂˆBˆBˆBˆNÂˆÛÛœİ[›š[™ÈHÛÜ
-
-K˜Ø]Ú
-
-\œ›ÜŠHOˆÂˆÙÊ	Ù\œ›Ü‰Ë	Ù[]™\WİÛÜšÙ\—ØÜ˜\ÚY	ËÂˆ\œ›Üˆ\œ›Üˆ[œİ[˜Ù[Ùˆ\œ›ÜˆÈ\œ›Ü‹›Y\ÜØYÙHˆİš[™Ê\œ›ÜŠKˆJNÂˆ›ØÙ\ÜË™^]ÛÙHHNÂˆJNÂˆ™]\›ˆ\Ş[˜È
-
-HOˆÂˆİÜ[™ÈHYNÂˆ]ØZ][›š[™ÎÂˆNÂŸB
+export async function startDeliveryWorker(repository = new Repository()): Promise<() => Promise<void>> {
+  const workerId = `${os.hostname()}-${process.pid}`;
+  let stopping = false;
+  let staleCounter = 0;
+  const loop = async (): Promise<void> => {
+    while (!stopping) {
+      if (!config.externalDeliveryEnabled) {
+        await new Promise((resolve) => setTimeout(resolve, 5_000));
+        continue;
+      }
+      if (staleCounter++ % 30 === 0) await repository.releaseStaleOutboxLocks();
+      const events = await repository.claimOutbox(workerId, 20);
+      if (!events.length) {
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+        continue;
+      }
+      for (const event of events) {
+        try {
+          await deliver(event);
+          await repository.markOutboxDelivered(event.id);
+          log('info', 'outbox_delivered', { eventId: event.id, eventType: event.event_type });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          await repository.markOutboxFailed(event.id, message);
+          log('warn', 'outbox_delivery_failed', { eventId: event.id, error: message });
+        }
+      }
+    }
+  };
+  const running = loop().catch((error) => {
+    log('error', 'delivery_worker_crashed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    process.exitCode = 1;
+  });
+  return async () => {
+    stopping = true;
+    await running;
+  };
+}
