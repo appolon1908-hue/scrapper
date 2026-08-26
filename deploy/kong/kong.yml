@@ -1,0 +1,64 @@
+_format_version: '3.0'
+_transform: true
+
+services:
+  - name: codestra-scrapper-api
+    url: http://api:3000
+    connect_timeout: 5000
+    read_timeout: 65000
+    write_timeout: 65000
+    retries: 0
+    routes:
+      - name: codestra-scrapper-private-integrations
+        paths:
+          - /api/v2/inbox
+          - /api/v2/webhooks
+        strip_path: false
+        preserve_host: true
+        protocols: [http, https]
+        plugins:
+          - name: ip-restriction
+            config:
+              allow:
+                - 10.40.0.1/32
+                - 127.0.0.1/32
+              status: 403
+              message: integration_source_not_allowlisted
+
+      - name: codestra-scrapper-public-api
+        paths:
+          - /api/v2
+          - /healthz
+          - /readyz
+          - /openapi.yaml
+        strip_path: false
+        preserve_host: true
+        protocols: [http, https]
+
+    plugins:
+      - name: correlation-id
+        config:
+          header_name: X-Correlation-ID
+          generator: uuid
+          echo_downstream: true
+
+      - name: rate-limiting
+        config:
+          minute: 120
+          hour: 3000
+          policy: local
+          fault_tolerant: false
+          hide_client_headers: false
+
+      - name: request-size-limiting
+        config:
+          allowed_payload_size: 1
+          size_unit: megabytes
+          require_content_length: false
+
+      - name: prometheus
+        config:
+          per_consumer: false
+          status_code_metrics: true
+          latency_metrics: true
+          upstream_health_metrics: true
