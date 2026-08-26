@@ -1,17 +1,27 @@
 import type {
+  BusinessRecord,
   CrawlJobRequest,
   JobListQuery,
   ResultListQuery,
-  BusinessRecord,
 } from '../domain/schemas.js';
 import { BusinessRepository, type SavePageInput } from './business-repository.js';
 import { JobRepository } from './job-repository.js';
 import { LifecycleRepository } from './lifecycle-repository.js';
 import { OperationsRepository } from './operations-repository.js';
 import { OutboxRepository } from './outbox-repository.js';
-import type { CreateJobInput, JobRecord, OutboxEvent } from './types.js';
+import type {
+  CreateJobInput,
+  JobRecord,
+  OutboxEvent,
+  QueuedJobDispatch,
+} from './types.js';
 
-export type { CreateJobInput, JobRecord, OutboxEvent } from './types.js';
+export type {
+  CreateJobInput,
+  JobRecord,
+  OutboxEvent,
+  QueuedJobDispatch,
+} from './types.js';
 
 export class Repository {
   constructor(
@@ -59,20 +69,35 @@ export class Repository {
     return this.jobs.retry(tenantId, actorId, correlationId, id);
   }
 
-  markRunning(id: string): Promise<boolean> {
-    return this.jobs.markRunning(id);
+  claimJobRun(
+    id: string,
+    dispatchVersion: number,
+    workerId: string,
+    runToken: string,
+    leaseSeconds: number,
+  ): Promise<JobRecord | null> {
+    return this.jobs.claimRun(id, dispatchVersion, workerId, runToken, leaseSeconds);
   }
 
-  updateProgress(id: string, progress: Record<string, unknown>): Promise<void> {
-    return this.jobs.updateProgress(id, progress);
+  renewJobLease(
+    id: string,
+    runToken: string,
+    progress: Record<string, unknown>,
+    leaseSeconds: number,
+  ): Promise<{ cancellationRequested: boolean } | null> {
+    return this.jobs.renewLease(id, runToken, progress, leaseSeconds);
   }
 
-  cancellationRequested(id: string): Promise<boolean> {
-    return this.jobs.cancellationRequested(id);
+  cancellationRequested(id: string, runToken: string): Promise<boolean> {
+    return this.jobs.cancellationRequested(id, runToken);
   }
 
-  listQueuedForReconciliation(limit = 100): Promise<string[]> {
+  listQueuedForReconciliation(limit = 100): Promise<QueuedJobDispatch[]> {
     return this.jobs.listQueuedForReconciliation(limit);
+  }
+
+  requeueExpiredJobRuns(limit = 100): Promise<QueuedJobDispatch[]> {
+    return this.jobs.requeueExpiredRuns(limit);
   }
 
   savePage(input: SavePageInput): Promise<void> {
@@ -99,24 +124,38 @@ export class Repository {
     return this.businesses.listForJob(tenantId, jobId, query);
   }
 
-  finalizeJob(id: string, progress: Record<string, unknown>): Promise<void> {
-    return this.lifecycle.finalizeJob(id, progress);
+  finalizeJob(
+    id: string,
+    runToken: string,
+    progress: Record<string, unknown>,
+  ): Promise<void> {
+    return this.lifecycle.finalizeJob(id, runToken, progress);
   }
 
-  failJob(id: string, errorCode: string, errorMessage: string): Promise<void> {
-    return this.lifecycle.failJob(id, errorCode, errorMessage);
+  failJob(
+    id: string,
+    runToken: string,
+    errorCode: string,
+    errorMessage: string,
+  ): Promise<boolean> {
+    return this.lifecycle.failJob(id, runToken, errorCode, errorMessage);
   }
 
-  claimOutbox(workerId: string, limit = 20): Promise<OutboxEvent[]> {
-    return this.outbox.claim(workerId, limit);
+  claimOutbox(workerId: string, lockToken: string, limit = 20): Promise<OutboxEvent[]> {
+    return this.outbox.claim(workerId, lockToken, limit);
   }
 
-  markOutboxDelivered(id: string): Promise<void> {
-    return this.outbox.markDelivered(id);
+  markOutboxDelivered(id: string, workerId: string, lockToken: string): Promise<boolean> {
+    return this.outbox.markDelivered(id, workerId, lockToken);
   }
 
-  markOutboxFailed(id: string, error: string): Promise<void> {
-    return this.outbox.markFailed(id, error);
+  markOutboxFailed(
+    id: string,
+    workerId: string,
+    lockToken: string,
+    error: string,
+  ): Promise<boolean> {
+    return this.outbox.markFailed(id, workerId, lockToken, error);
   }
 
   releaseStaleOutboxLocks(): Promise<number> {
