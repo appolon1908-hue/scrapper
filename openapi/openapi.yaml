@@ -1,0 +1,621 @@
+openapi: 3.1.0
+info:
+  title: Codestra Business Scrapper API
+  version: 2.0.0
+  description: |
+    Multi-tenant business website crawl and CRM-enrichment control plane.
+    The OpenAPI document describes the implemented API surface only. It does
+    not claim that the service has been deployed to production.
+servers:
+  - url: /
+tags:
+  - name: System
+  - name: Jobs
+  - name: Operations
+security:
+  - bearerAuth: []
+paths:
+  /:
+    get:
+      tags: [System]
+      security: []
+      operationId: serviceInfo
+      responses:
+        '200':
+          description: Service metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [service, version, api, documentation, deployment_status]
+                properties:
+                  service: { type: string }
+                  version: { type: string }
+                  api: { type: string }
+                  documentation: { type: string }
+                  deployment_status: { type: string }
+  /healthz:
+    get:
+      tags: [System]
+      security: []
+      operationId: liveness
+      responses:
+        '200':
+          description: Process is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+  /readyz:
+    get:
+      tags: [System]
+      security: []
+      operationId: readiness
+      responses:
+        '200':
+          description: Dependencies are ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '503':
+          description: A dependency is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+  /openapi.yaml:
+    get:
+      tags: [System]
+      security: []
+      operationId: openApiDocument
+      responses:
+        '200':
+          description: OpenAPI contract
+          content:
+            application/yaml:
+              schema: { type: string }
+  /api/v2/jobs:
+    post:
+      tags: [Jobs]
+      operationId: createCrawlJob
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - $ref: '#/components/parameters/CorrelationHeader'
+        - $ref: '#/components/parameters/IdempotencyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrawlJobRequest'
+      responses:
+        '200':
+          description: Existing idempotent job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCreateResponse'
+        '202':
+          description: New job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCreateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    get:
+      tags: [Jobs]
+      operationId: listCrawlJobs
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/JobStatus'
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 500 }
+      responses:
+        '200':
+          description: Tenant jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Job'
+                  next_cursor:
+                    type: [string, 'null']
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v2/commands/crawl:
+    post:
+      tags: [Jobs]
+      operationId: commandCreateCrawlJob
+      description: Command-style alias for POST /api/v2/jobs.
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - $ref: '#/components/parameters/CorrelationHeader'
+        - $ref: '#/components/parameters/IdempotencyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrawlJobRequest'
+      responses:
+        '200':
+          description: Existing idempotent job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCreateResponse'
+        '202':
+          description: New job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCreateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v2/jobs/{id}:
+    get:
+      tags: [Jobs]
+      operationId: getCrawlJob
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Crawl job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v2/jobs/{id}/results:
+    get:
+      tags: [Jobs]
+      operationId: listCrawlJobResults
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - $ref: '#/components/parameters/JobId'
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+        - name: cursor
+          in: query
+          schema: { type: string, format: uuid }
+        - name: minConfidence
+          in: query
+          schema: { type: number, minimum: 0, maximum: 1, default: 0 }
+      responses:
+        '200':
+          description: Resolved business records
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, record]
+                      properties:
+                        id: { type: string, format: uuid }
+                        record:
+                          $ref: '#/components/schemas/BusinessRecord'
+                  next_cursor:
+                    type: [string, 'null']
+                    format: uuid
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v2/jobs/{id}/cancel:
+    post:
+      tags: [Jobs]
+      operationId: cancelCrawlJob
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - $ref: '#/components/parameters/CorrelationHeader'
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Cancellation accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v2/commands/jobs/{id}/cancel:
+    post:
+      tags: [Jobs]
+      operationId: commandCancelCrawlJob
+      description: Command-style alias for POST /api/v2/jobs/{id}/cancel.
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - $ref: '#/components/parameters/CorrelationHeader'
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Cancellation accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v2/jobs/{id}/retry:
+    post:
+      tags: [Jobs]
+      operationId: retryCrawlJob
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - $ref: '#/components/parameters/CorrelationHeader'
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '202':
+          description: Retry accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v2/commands/jobs/{id}/retry:
+    post:
+      tags: [Jobs]
+      operationId: commandRetryCrawlJob
+      description: Command-style alias for POST /api/v2/jobs/{id}/retry.
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - $ref: '#/components/parameters/CorrelationHeader'
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '202':
+          description: Retry accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v2/stats:
+    get:
+      tags: [Operations]
+      operationId: tenantStats
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+      responses:
+        '200':
+          description: Tenant job, business and outbox counts
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+  /api/v2/metrics:
+    get:
+      tags: [Operations]
+      operationId: prometheusMetrics
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+      responses:
+        '200':
+          description: Prometheus text exposition
+          content:
+            text/plain:
+              schema: { type: string }
+  /api/v2/capabilities:
+    get:
+      tags: [Operations]
+      operationId: serviceCapabilities
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+      responses:
+        '200':
+          description: Implemented and disabled capabilities
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    TenantHeader:
+      name: x-tenant-id
+      in: header
+      required: false
+      description: Must match the authenticated service principal when supplied.
+      schema: { type: string, maxLength: 200 }
+    CorrelationHeader:
+      name: x-correlation-id
+      in: header
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 200 }
+    IdempotencyHeader:
+      name: idempotency-key
+      in: header
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 200 }
+    JobId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Authentication failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Required scope is missing
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Request conflicts with current state
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+        request_id: { type: string }
+        required_scope: { type: string }
+        details: {}
+    JobStatus:
+      type: string
+      enum: [queued, running, completed, failed, cancel_requested, cancelled]
+    CrawlJobRequest:
+      type: object
+      required: [seedUrls]
+      additionalProperties: false
+      properties:
+        seedUrls:
+          type: array
+          minItems: 1
+          maxItems: 5000
+          items: { type: string, format: uri }
+        profile:
+          type: string
+          enum: [company, contacts, registry, full]
+          default: full
+        mode:
+          type: string
+          enum: [single, domain, list, discovery]
+          default: domain
+        browser:
+          type: string
+          enum: [auto, http, playwright]
+          default: auto
+        maxPages:
+          type: integer
+          minimum: 1
+          maximum: 50000
+          default: 250
+        maxCompanies:
+          type: integer
+          minimum: 1
+          maximum: 5000
+          default: 500
+        maxDepth:
+          type: integer
+          minimum: 0
+          maximum: 8
+          default: 3
+        requestsPerSecond:
+          type: number
+          minimum: 0.1
+          maximum: 10
+          default: 1
+        includePatterns:
+          type: array
+          maxItems: 50
+          items: { type: string, minLength: 1, maxLength: 300 }
+          default: []
+        excludePatterns:
+          type: array
+          maxItems: 50
+          items: { type: string, minLength: 1, maxLength: 300 }
+          default: []
+        countryCode:
+          type: string
+          pattern: '^[A-Z]{2}$'
+          default: US
+        callbackReference:
+          type: string
+          maxLength: 200
+        tags:
+          type: object
+          additionalProperties:
+            type: string
+            maxLength: 500
+          default: {}
+        verification:
+          type: object
+          additionalProperties: false
+          properties:
+            knownEin:
+              type: string
+              pattern: '^\d{2}-?\d{7}$'
+            provider:
+              type: string
+              maxLength: 100
+            consentReference:
+              type: string
+              maxLength: 200
+    Job:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - correlation_id
+        - status
+        - progress
+        - error
+        - version
+        - created_at
+        - updated_at
+        - started_at
+        - completed_at
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string }
+        correlation_id: { type: string }
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        progress: { type: object, additionalProperties: true }
+        error:
+          type: [object, 'null']
+          properties:
+            code: { type: string }
+            message: { type: [string, 'null'] }
+        version: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        started_at: { type: [string, 'null'], format: date-time }
+        completed_at: { type: [string, 'null'], format: date-time }
+    JobCreateResponse:
+      allOf:
+        - $ref: '#/components/schemas/Job'
+        - type: object
+          required: [duplicate]
+          properties:
+            duplicate: { type: boolean }
+    Evidence:
+      type: object
+      required: [sourceUrl, extractor, capturedAt]
+      properties:
+        sourceUrl: { type: string, format: uri }
+        extractor: { type: string }
+        capturedAt: { type: string, format: date-time }
+        label: { type: string }
+    PublicOfficer:
+      type: object
+      required: [name, title, confidence, evidence]
+      properties:
+        name: { type: string }
+        title: { type: string }
+        email: { type: string }
+        phone: { type: string }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/Evidence'
+    BusinessRecord:
+      type: object
+      required:
+        - entityKey
+        - legalName
+        - displayName
+        - website
+        - domain
+        - description
+        - emails
+        - phones
+        - addresses
+        - socialProfiles
+        - categories
+        - officers
+        - einMasked
+        - einFingerprint
+        - einStatus
+        - confidence
+        - evidence
+        - firstSeenAt
+        - lastSeenAt
+      properties:
+        entityKey: { type: string }
+        legalName: { type: [string, 'null'] }
+        displayName: { type: string }
+        website: { type: string, format: uri }
+        domain: { type: string }
+        description: { type: [string, 'null'] }
+        emails: { type: array, items: { type: string } }
+        phones: { type: array, items: { type: string } }
+        addresses: { type: array, items: { type: string } }
+        socialProfiles: { type: array, items: { type: string, format: uri } }
+        categories: { type: array, items: { type: string } }
+        officers:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicOfficer'
+        einMasked: { type: [string, 'null'] }
+        einFingerprint: { type: [string, 'null'] }
+        einStatus:
+          type: string
+          enum: [not_observed, observed_public, verified, mismatch, manual_review]
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        evidence:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              $ref: '#/components/schemas/Evidence'
+        firstSeenAt: { type: string, format: date-time }
+        lastSeenAt: { type: string, format: date-time }

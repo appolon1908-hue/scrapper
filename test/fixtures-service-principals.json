@@ -1,0 +1,11 @@
+{
+  "principals": [
+    {
+      "clientId": "ci-client",
+      "tenantId": "ci-tenant",
+      "tokenSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "scopes": ["*"],
+      "enabled": true
+    }
+  ]
+}

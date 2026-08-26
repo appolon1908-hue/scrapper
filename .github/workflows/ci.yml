@@ -4,9 +4,12 @@ on:
   pull_request:
   push:
     branches:
+      - main
       - 'feature/**'
       - 'integration/**'
       - 'hardening/**'
+      - 'refactor/**'
+      - 'ops/**'
 
 permissions:
   contents: read
@@ -18,7 +21,7 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
       NODE_ENV: test
@@ -26,11 +29,43 @@ jobs:
       EIN_FINGERPRINT_PEPPER: test-only-pepper
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22.16.0'
-      - name: Install pinned dependencies and validation toolchain
-        run: npm install --include=dev --ignore-scripts --no-audit --no-fund
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm run build
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci --include=dev --ignore-scripts --no-audit --no-fund
+
+      - name: Validate source, contract, tests and formatting
+        run: npm run check
+
+      - name: Build production container
+        run: docker build --tag codestra-scrapper:ci .
+
+      - name: Validate Compose deployment model
+        env:
+          SCRAPPER_IMAGE: ghcr.io/codestra/scrapper@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          SCRAPPER_ENV_FILE: /dev/null
+          DATABASE_URL_FILE: .ci/database_url
+          POSTGRES_PASSWORD_FILE: .ci/postgres_password
+          SERVICE_PRINCIPALS_FILE: .ci/service_principals
+          EIN_FINGERPRINT_PEPPER_FILE: .ci/ein_fingerprint_pepper
+          OUTBOUND_HMAC_SECRET_FILE: .ci/outbound_hmac
+          OUTBOUND_BEARER_TOKEN_FILE: .ci/middleware_token
+          OUTBOUND_CA_FILE: .ci/middleware_ca
+          OUTBOUND_CLIENT_CERT_FILE: .ci/client_cert
+          OUTBOUND_CLIENT_KEY_FILE: .ci/client_key
+        run: |
+          mkdir -p .ci
+          printf '%s' 'postgresql://scrapper:test@postgres:5432/scrapper' > .ci/database_url
+          printf '%s' 'test-password' > .ci/postgres_password
+          cp test/fixtures-service-principals.json .ci/service_principals
+          printf '%s' 'test-ein-pepper' > .ci/ein_fingerprint_pepper
+          printf '%s' 'test-hmac' > .ci/outbound_hmac
+          printf '%s' 'test-token' > .ci/middleware_token
+          : > .ci/middleware_ca
+          : > .ci/client_cert
+          : > .ci/client_key
+          docker compose config --quiet

@@ -16,9 +16,9 @@
     "typecheck": "tsc --noEmit",
     "format-check": "prettier --check .",
     "test": "npm run build && node --test test/*.test.mjs",
-    "test:unit": "npm run build && node --test test/unit-*.test.mjs",
-    "test:integration": "npm run build && node --test test/integration.test.mjs",
-    "check": "npm run lint && npm run typecheck && npm test"
+    "test:unit": "npm run test",
+    "test:contract": "npm run build && node --test test/unit-api-contract.test.mjs",
+    "check": "npm run lint && npm run typecheck && npm run test"
   },
   "dependencies": {
     "@crawlee/cheerio": "3.18.1",

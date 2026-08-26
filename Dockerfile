@@ -1,9 +1,13 @@
 FROM mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e AS build
 WORKDIR /app
-COPY package*.json tsconfig.json eslint.config.js ./
-RUN npm ci && npm cache clean --force
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+COPY package.json package-lock.json tsconfig.json eslint.config.js ./
+RUN npm ci --include=dev --ignore-scripts --no-audit --no-fund \
+    && npm cache clean --force
 COPY src ./src
-RUN npm run build && npm prune --omit=dev --omit=optional
+RUN npm run build \
+    && npm prune --omit=dev --omit=optional --ignore-scripts \
+    && npm cache clean --force
 
 FROM mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e
 WORKDIR /app
@@ -18,7 +22,9 @@ COPY --from=build --chown=pwuser:pwuser /app/dist ./dist
 COPY --chown=pwuser:pwuser migrations ./migrations
 COPY --chown=pwuser:pwuser openapi ./openapi
 RUN mkdir -p /app/storage && chown -R pwuser:pwuser /app/storage
-ENV NODE_ENV=production PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ENV NODE_ENV=production \
+    NODE_OPTIONS=--enable-source-maps \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 USER pwuser
 EXPOSE 3000
 CMD ["node", "dist/main.js"]
