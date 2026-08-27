@@ -2,17 +2,15 @@ name: Gateway security validation
 
 on:
   pull_request:
-    branches:
-      - 'release/**'
   push:
     branches:
+      - main
       - 'release/**'
+      - 'feature/**'
+      - 'integration/**'
       - 'hardening/**'
-    paths:
-      - 'deploy/**'
-      - 'scripts/validate-gateway.sh'
-      - 'test/fixtures/Caddyfile.gateway-test'
-      - '.github/workflows/gateway-validation.yml'
+      - 'refactor/**'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -28,18 +26,17 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Validate Kong and Caddy security controls
-        env:
-          KONG_TEST_IMAGE: kong:3.9
-          CADDY_TEST_IMAGE: caddy:2-alpine
-          CURL_TEST_IMAGE: curlimages/curl:8.12.1
+        shell: bash
         run: bash scripts/validate-gateway.sh
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
-          name: gateway-validation-${{ github.sha }}
-          path: release-evidence/
+          name: gateway-evidence-${{ github.sha }}
+          path: release-evidence
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
