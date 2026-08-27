@@ -1,0 +1,40 @@
+name: Export operations dashboard source
+
+on:
+  push:
+    branches:
+      - feature/operations-dashboard
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Create review archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD > DASHBOARD_SOURCE_SHA
+          tar -czf operations-dashboard-source.tgz \
+            apps/operations-dashboard \
+            docs/design/OPERATIONS_DASHBOARD.md \
+            openapi/openapi.yaml \
+            package.json \
+            package-lock.json \
+            test
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: operations-dashboard-source-${{ github.sha }}
+          path: |
+            operations-dashboard-source.tgz
+            DASHBOARD_SOURCE_SHA
+          if-no-files-found: error
+          retention-days: 1
