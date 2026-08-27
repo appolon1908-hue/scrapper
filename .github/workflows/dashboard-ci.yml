@@ -77,12 +77,24 @@ jobs:
             --no-sandbox \
             --disable-gpu \
             --disable-dev-shm-usage \
-            --virtual-time-budget=10000 \
+            --disable-background-networking \
+            --disable-extensions \
+            --no-first-run \
+            --no-default-browser-check \
+            --virtual-time-budget=12000 \
             --dump-dom \
             'http://127.0.0.1:4173/?browser-smoke=1' \
             > /tmp/dashboard-browser-smoke.html
 
-          grep -Fq 'BROWSER_SMOKE=PASS' /tmp/dashboard-browser-smoke.html
+          if ! grep -Fq 'BROWSER_SMOKE=PASS' /tmp/dashboard-browser-smoke.html; then
+            echo '===== BROWSER SMOKE FAILURE ====='
+            grep -n -A30 -B5 'BROWSER_SMOKE=' /tmp/dashboard-browser-smoke.html || true
+            grep -o 'data-browser-smoke="[^"]*"' /tmp/dashboard-browser-smoke.html || true
+            echo '===== DOM TAIL ====='
+            tail -200 /tmp/dashboard-browser-smoke.html || true
+            exit 1
+          fi
+
           grep -Fq 'job-search-filter-drawer' /tmp/dashboard-browser-smoke.html
           grep -Fq 'import-form-submit' /tmp/dashboard-browser-smoke.html
           grep -Fq 'result-search-filter-drawer-export-empty' /tmp/dashboard-browser-smoke.html
