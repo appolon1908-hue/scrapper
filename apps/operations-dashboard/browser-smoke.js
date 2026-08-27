@@ -42,7 +42,9 @@ function rowCount() {
 }
 
 function resultCount() {
-  return document.querySelectorAll('[data-open-result]').length;
+  return new Set(
+    [...document.querySelectorAll('[data-open-result]')].map((element) => element.dataset.openResult),
+  ).size;
 }
 
 function recordCheck(checks, label) {
@@ -131,10 +133,7 @@ export async function runBrowserSmoke() {
       () => document.querySelector('#job-drawer')?.getAttribute('aria-hidden') === 'false',
       'new crawl drawer',
     );
-    assert(
-      document.querySelector('#job-drawer')?.textContent.includes('manual-smoke.example'),
-      'new crawl simulation uses submitted targets',
-    );
+    assert(document.querySelector('#job-drawer')?.textContent.includes('manual-smoke.example'), 'new crawl simulation uses submitted targets');
     click('[data-close-drawer]', 'close new crawl drawer');
     recordCheck(checks, 'import-form-submit');
 
@@ -155,52 +154,28 @@ export async function runBrowserSmoke() {
 
     click('[data-open-result]', 'open result drawer');
     await waitFor(
-      () => document.querySelector('#job-drawer')?.getAttribute('aria-hidden') === 'false',
-      'result drawer',
-    );
-    assert(document.querySelector('#job-drawer')?.textContent.includes('Evidence'), 'result drawer renders evidence state');
-    click('[data-close-drawer]', 'close result drawer');
+      () => document.querySelectoŠ	ÈÚ›Ø‹Y˜]Ù\‰ÊOË™Ù]]šX]J	Ø\šXKZY[‰ÊHOOH	Ù˜[ÙIËˆ	Ü™\İ[˜]Ù\‰Ëˆ
+NÂˆ\ÜÙ\
+Øİ[Y[œ]Y\TÙ[XİÜŠ	ÈÚ›Ø‹Y˜]Ù\‰ÊOË^ÛÛ[š[˜ÛY\Ê	Ñ]šY[˜ÙIÊK	Ü™\İ[˜]Ù\ˆ™[™\œÈ]šY[˜ÙHİ]IÊNÂˆÛXÚÊ	ÖÙ]KXÛÜÙKY˜]Ù\—IË	ØÛÜÙH™\İ[˜]Ù\‰ÊNÂ‚ˆÛXÚÊ	ÖÙ]KXÛX\‹\™\İ[Yš[\œ×IË	ØÛX\ˆ™\İ[š[\œÈYØZ[‰ÊNÂˆ]ØZ]ØZ]
+Ì
+NÂˆÛÛœİ[˜ÚÜÛXÚÈHS[˜ÚÜ‘[[Y[œ›İİ\K˜ÛXÚÎÂˆ]^ÜšYÙÙ\™YH˜[ÙNÂˆS[˜ÚÜ‘[[Y[œ›İİ\K˜ÛXÚÈH[˜İ[Ûˆ[\˜Ù\YİÛ›ØY
 
-    click('[data-clear-result-filters]', 'clear result filters again');
-    await wait(30);
-    const anchorClick = HTMLAnchorElement.prototype.click;
-    let exportTriggered = false;
-    HTMLAnchorElement.prototype.click = function interceptedDownload() {
-      exportTriggered = true;
-    };
-    try {
-      click('[data-export-results="csv"]', 'CSV export');
-    } finally {
-      HTMLAnchorElement.prototype.click = anchorClick;
-    }
-    assert(exportTriggered, 'visible-result CSV export is triggered');
+HÂˆ^ÜšYÙÙ\™YHYNÂˆNÂˆHÂˆÛXÚÊ	ÖÙ]KY^Ü\™\İ[ÏH˜Üİˆ—IË	ĞÔÕˆ^Ü	ÊNÂˆHš[˜[HÂˆS[˜ÚÜ‘[[Y[œ›İİ\K˜ÛXÚÈH[˜ÚÜÛXÚÎÂˆBˆ\ÜÙ\
+^ÜšYÙÙ\™Y	İš\ÚX›K\™\İ[ÔÕˆ^Ü\ÈšYÙÙ\™Y	ÊNÂ‚ˆÙ]˜[YJØİ[Y[œ]Y\TÙ[XİÜŠ	ÖÙ]K\™\İ[\ÙX\˜ÚIÊK	ÙYš[š][K[›İ\™\Ù[	ÊNÂˆ]ØZ]ØZ]
+Ì
+NÂˆ\ÜÙ\
+Øİ[Y[œ]Y\TÙ[XİÜŠ	Ë™[\K\İ]IÊOË^ÛÛ[š[˜ÛY\Ê	Ó›ÈX]Ú[™È™\İ[ÉÊK	Ù[\Hš[\™Yİ]H™[™\œÉÊNÂˆ™XÛÜ™ÚXÚÊÚXÚÜË	Ü™\İ[\ÙX\˜ÚYš[\‹Y˜]Ù\‹Y^ÜY[\IÊNÂ‚ˆ]ØZ]›İ]J	Ú[YÜ˜][ÛœÉÊNÂˆÛXÚÊ	ÖÙ]K\[‹YXYÛ›ÜİXÜ×IË	Ü[ˆXYÛ›ÜİXÜÉÊNÂˆ]ØZ]ØZ]›ÜŠ
 
-    setValue(document.querySelector('[data-result-search]'), 'definitely-not-present');
-    await wait(30);
-    assert(document.querySelector('.empty-state')?.textContent.includes('No matching results'), 'empty filtered state renders');
-    recordCheck(checks, 'result-search-filter-drawer-export-empty');
+HOˆØİ[Y[œ]Y\TÙ[XİÜ[
+	Ë™XYÛ›ÜİXËXØ\™	ÊK›[™İOOHL	ÙXYÛ›ÜİXÈØ\™ÉÊNÂˆ\ÜÙ\
+ˆË‹‹™Øİ[Y[œ]Y\TÙ[XİÜ[
+	Ë™XYÛ›ÜİXËXØ\™	ÊWK™]™\J
+Ø\™
+HOˆØ\™^ÛÛ[š[˜ÛY\Ê	ÜÚÚ\Y	ÊJKˆ	Ù[[ÈXYÛ›ÜİXÜÈ™[XZ[ˆ^XÚ]HÚÚ\Y	Ëˆ
+NÂˆ™XÛÜ™ÚXÚÊÚXÚÜË	ÙXYÛ›ÜİXÜËY]K\İ]\ÉÊNÂ‚ˆÛXÚÊ	ÖÙ]K[Ü[‹\Ù][™Ü×IË	ÛÜ[ˆÙ][™ÜÉÊNÂˆ]ØZ]ØZ]›ÜŠ
 
-    await route('integrations');
-    click('[data-run-diagnostics]', 'run diagnostics');
-    await waitFor(() => document.querySelectorAll('.diagnostic-card').length === 10, 'diagnostic cards');
-    assert(
-      [...document.querySelectorAll('.diagnostic-card')].every((card) => card.textContent.includes('skipped')),
-      'demo diagnostics remain explicitly skipped',
-    );
-    recordCheck(checks, 'diagnostics-data-states');
-
-    click('[data-open-settings]', 'open settings');
-    await waitFor(() => document.querySelector('#settings-dialog')?.open, 'settings dialog');
-    assert(document.querySelector('#settings-write-state')?.textContent.includes('Locked'), 'settings reports locked writes');
-    document.querySelector('#settings-dialog').close();
-    recordCheck(checks, 'settings-dialog');
-
-    marker.textContent = `BROWSER_SMOKE=PASS\nCHECKS=${checks.join(',')}`;
-    document.documentElement.dataset.browserSmoke = 'pass';
-  } catch (error) {
-    marker.textContent = `BROWSER_SMOKE=FAIL\n${error instanceof Error ? error.stack || error.message : String(error)}`;
-    document.documentElement.dataset.browserSmoke = 'fail';
-  }
-
-  document.body.append(marker);
-}
+HOˆØİ[Y[œ]Y\TÙ[XİÜŠ	ÈÜÙ][™ÜËYX[ÙÉÊOË›Ü[‹	ÜÙ][™ÜÈX[ÙÉÊNÂˆ\ÜÙ\
+Øİ[Y[œ]Y\TÙ[XİÜŠ	ÈÜÙ][™ÜË]Üš]K\İ]IÊOË^ÛÛ[š[˜ÛY\Ê	ÓØÚÙY	ÊK	ÜÙ][™ÜÈ™\ÜÈØÚÙYÜš]\ÉÊNÂˆØİ[Y[œ]Y\TÙ[XİÜŠ	ÈÜÙ][™ÜËYX[ÙÉÊK˜ÛÜÙJ
+NÂˆ™XÛÜ™ÚXÚÊÚXÚÜË	ÜÙ][™ÜËYX[ÙÉÊNÂ‚ˆX\šÙ\‹^ÛÛ[H”“ÕÔÑT—ÔÓSÒÑOTTÔ×ÒPÒÔÏIØÚXÚÜËš›Ú[Š	Ë	Ê_XÂˆØİ[Y[™Øİ[Y[[[Y[™]\Ù]˜œ›İÜÙ\”Û[ÚÙHH	Ü\ÜÉÎÂˆHØ]Ú
+\œ›ÜŠHÂˆX\šÙ\‹^ÛÛ[H”“ÕÔÑT—ÔÓSÒÑOQRS‰Ù\œ›Üˆ[œİ[˜Ù[Ùˆ\œ›ÜˆÈ\œ›Ü‹œİXÚÈ\œ›Ü‹›Y\ÜØYÙHˆİš[™Ê\œ›ÜŠ_XÂˆØİ[Y[™Øİ[Y[[[Y[™]\Ù]˜œ›İÜÙ\”Û[ÚÙHH	Ù˜Z[	ÎÂˆB‚ˆØİ[Y[˜›ÙK˜\[™
+X\šÙ\ŠNÂŸB
