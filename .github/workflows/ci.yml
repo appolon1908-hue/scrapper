@@ -5,12 +5,13 @@ on:
   push:
     branches:
       - main
+      - 'release/**'
       - 'feature/**'
       - 'integration/**'
       - 'hardening/**'
       - 'refactor/**'
-      - 'release/**'
       - 'ops/**'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -26,19 +27,33 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
       - name: Validate workflow and deployment safety policy
         shell: bash
         run: |
           set -euo pipefail
-          bash -n scripts/runtime-path-inventory.sh
-          bash -n scripts/validate-deployment-scaffolding.sh
-          bash -n scripts/deploy-staging.sh
-          bash -n scripts/rollback-staging.sh
-          shellcheck -S error \
+          ruby -c scripts/validate-workflow-policy.rb
+          bash -n \
             scripts/runtime-path-inventory.sh \
+            scripts/verify-release-context.sh \
+            scripts/verify-release-image.sh \
             scripts/validate-deployment-scaffolding.sh \
             scripts/deploy-staging.sh \
-            scripts/rollback-staging.sh
+            scripts/rollback-staging.sh \
+            scripts/deploy-production.sh \
+            scripts/rollback-production.sh
+          shellcheck -S error \
+            scripts/runtime-path-inventory.sh \
+            scripts/verify-release-context.sh \
+            scripts/verify-release-image.sh \
+            scripts/validate-deployment-scaffolding.sh \
+            scripts/deploy-staging.sh \
+            scripts/rollback-staging.sh \
+            scripts/deploy-production.sh \
+            scripts/rollback-production.sh
+          ruby scripts/validate-workflow-policy.rb
           bash scripts/validate-deployment-scaffolding.sh
 
   validate:
@@ -69,14 +84,16 @@ jobs:
           --health-timeout 5s
           --health-retries 20
     env:
-      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
       NODE_ENV: test
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
       DATABASE_URL: postgresql://scrapper:scrapper@127.0.0.1:5432/scrapper
       REDIS_URL: redis://127.0.0.1:6379
       SERVICE_PRINCIPALS_FILE: test/fixtures-service-principals.json
       EIN_FINGERPRINT_PEPPER: test-only-pepper
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -116,6 +133,7 @@ jobs:
           OUTBOUND_CLIENT_CERT_FILE: .ci/client_cert
           OUTBOUND_CLIENT_KEY_FILE: .ci/client_key
         run: |
+          set -euo pipefail
           mkdir -p .ci
           printf '%s' 'postgresql://scrapper:test@postgres:5432/scrapper' > .ci/database_url
           printf '%s' 'test-password' > .ci/postgres_password
