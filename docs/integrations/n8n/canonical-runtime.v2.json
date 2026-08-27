@@ -1,0 +1,12 @@
+{
+  "schema_version": "2.0",
+  "repository_role": "LEGACY_CURRENT_LINEAGE_PRESERVED",
+  "canonical_future_repository": "appolon1908-hue/kyqra-crawler",
+  "canonical_contract_branch": "integration/codestra-crawler-fabric-v2",
+  "duplicate_new_runtime_implementation_allowed": false,
+  "runtime_cutover_performed": false,
+  "branch_deletion_authorized": false,
+  "source_rewrite_authorized": false,
+  "production_changed": false,
+  "migration_gates": ["source_parity", "contract_parity", "data_backup_restore", "queue_drain", "callback_cutover", "immutable_images", "runtime_readback", "rollback_rehearsal", "independent_approval"]
+}
