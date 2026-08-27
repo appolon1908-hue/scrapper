@@ -1,137 +1,163 @@
 # CI and deployment scaffolding security review
 
-Date: 2026-08-26  
+Date: 2026-08-27  
 Review branch: `hardening/runtime-path-deployment-gates`  
 Base: `release/production-readiness-20260826`
 
 ## Decision
 
-`LIVE_SERVER_CHANGED=NO`
+```text
+LIVE_SERVER_CHANGED=NO
+REMOTE_DEPLOYMENT_AUTHORIZED=NO
+RUNTIME_PATHS_VERIFIED=NO
+STAGING_DEPLOYED=NO
+PRODUCTION_DEPLOYED=NO
+GO_LIVE=NO_GO
+```
 
-`REMOTE_DEPLOYMENT_AUTHORIZED=NO`
+This branch prepares secure CI, release, runtime-inventory, staging and production
+deployment controls. It does not authorize a remote deployment and it does not
+establish that any server path, environment file, secret mount, Kong route,
+Caddy route, n8n workflow or Odoo instance exists at the expected location.
 
-`RUNTIME_PATHS_VERIFIED=NO`
+No runtime inventory, SSH session, branch-protection mutation, staging workflow
+or production workflow was dispatched while preparing these corrections.
 
-The repository changes prepare gated workflows only. No runtime inventory or
-deployment workflow was dispatched during this review.
+## Corrected review blockers
 
-## Findings resolved by this branch
+### Production canary failure restores the previous application image
 
-### Critical: release push could mutate a configured staging host
+Production now requires a separately supplied previous immutable image. The
+candidate and previous image are both verified before any server write. If the
+candidate deployment or runner-side no-write canary fails, the workflow restores
+the verified previous application image and proves readiness before failing the
+release operation.
 
-The release workflow previously contained an automatic `remote-staging` job.
-A push to `release/**` could upload files, create a default path, authenticate
-to GHCR, run migrations and restart containers whenever secrets were present.
+The automatic response is deliberately application-only. It does not perform a
+destructive database restore. The pre-deployment PostgreSQL dump is retained as
+reviewed recovery evidence and database restoration remains a separately
+approved operation.
 
-Resolution: release readiness now stops at source verification, gateway
-validation, immutable publication and an ephemeral local staging/rollback
-exercise. All remote deployment is manual and environment-gated.
+### Deployment is bound to the exact protected release head
 
-### High: SSH host trust was created at deployment time
+Deployment no longer accepts any ancestor of a protected branch. The requested
+source SHA must equal the current head of the protected release branch.
 
-The production and automatic staging paths used `ssh-keyscan`, which trusts the
-key observed on the deployment network.
-
-Resolution: every audit/deploy workflow requires pinned `known_hosts` data
-supplied through a protected GitHub environment and enables strict host-key
-checking.
-
-### High: server writes occurred before runtime layout verification
-
-The previous staging workflow created directories, uploaded archives and wrote
-environment/canary files before proving the real runtime layout.
-
-Resolution: a read-only inventory produces a host-and-path fingerprint.
-Deployment requires that reviewed fingerprint and recomputes it immediately
-before the first write.
-
-### High: implicit and inconsistent runtime paths
-
-Staging and production used different default `/opt` paths. A missing secret
-could silently select an unreviewed location.
-
-Resolution: there are no runtime path defaults in deploy workflows. Runtime
-root, environment file and secrets root are explicit, validated inputs.
-
-### High: duplicate deploy and publish workflows
-
-Two staging deploy workflows and two image publication paths created ambiguity
-about the authoritative release mechanism.
-
-Resolution: this branch keeps one staging workflow and one signed/attested
-publisher inside release readiness. The duplicate staging workflow is deleted;
-legacy publication entrypoints are manual, read-only and intentionally inert.
-
-### Medium: canary and environment material persisted on the host
-
-The old staging workflow uploaded full environment content and a `.canary.env`
-file.
-
-Resolution: environment/secrets are externally managed. Canary credentials are
-used only by the isolated GitHub runner and are not written to the server.
-
-### Medium: broad workflow permissions
-
-Release readiness granted write/OIDC permissions to all jobs.
-
-Resolution: the workflow default is read-only; package, attestation and OIDC
-permissions exist only on the publication job.
-
-### Medium: mutable GitHub Action references
-
-Critical workflows used version tags.
-
-Resolution: all third-party actions in active workflows are pinned to complete
-commit SHAs. Dependabot is configured to propose reviewed updates.
-
-## Required checks
-
-Release branch protection is scaffolded to require:
+The deployment preflight also queries GitHub for exact-SHA check runs and
+requires the latest successful results for:
 
 - `validate`
 - `deployment-policy`
 - `gateway`
 
-It also requires one approval, last-push approval, stale-review dismissal,
-conversation resolution, linear history, admin enforcement,
-and disables force-pushes and deletion.
+This blocks deployment of an older release after a later security fix reaches
+the release branch.
 
-The release branch was reported as unprotected when this review began. The
-`Configure release branch protection` workflow must be run by an authorized
-administrator and its result independently verified before merge.
+### Rollback images receive full supply-chain verification
 
-## Residual risks and follow-up evidence
+The candidate image must carry the exact requested release revision. The
+rollback image must carry a different revision that is an ancestor of the same
+accepted release lineage.
 
-1. No actual runtime path contract has been collected yet.
-2. Audit and deployment GitHub environments, approvals and credentials have
-   not been verified.
-3. The gateway test fixture still uses mutable test-only container tags. The
-   production/staging configurations continue to require immutable digests;
-   pin the test fixtures in a separate supply-chain update.
-4. A real staging deployment, no-write canary and rollback have not been run by
-   this branch.
-5. Production remains blocked until staging evidence, rollback evidence and
-   explicit release approval exist.
-6. Runtime Docker access should not be granted to the read-only audit account;
-   membership in the Docker group is effectively root-equivalent.
-7. GitHub requires manually dispatched workflows to exist on the repository's
-   default branch. The default branch is `main`, while this review targets the
-   release branch. The reviewed workflow and script must enter the approved
-   default control-plane lineage before inventory can be dispatched; this PR
-   does not change the default branch or copy files to `main`.
+Both images must pass:
 
-## Review checklist before any remote workflow is dispatched
+- immutable GHCR digest validation;
+- OCI revision-label validation;
+- Cosign keyless signature verification;
+- certificate identity bound to the exact release-readiness workflow and exact
+  protected release branch;
+- GitHub repository provenance-attestation verification.
 
-- [ ] Review and merge this scaffolding through a protected release branch.
-- [ ] Make the reviewed manual workflow available through the approved default
-      control-plane lineage.
-- [ ] Apply and verify release branch protection.
-- [ ] Configure audit environments with non-root, least-privilege SSH identities.
-- [ ] Verify host keys out of band and store pinned `known_hosts`.
-- [ ] Run the read-only inventory workflow.
-- [ ] Review the artifact and record its exact fingerprint.
-- [ ] Confirm all external-delivery and registry flags are false.
-- [ ] Approve a manual staging deployment using the exact fingerprint.
-- [ ] Review staging canary and rollback evidence.
-- [ ] Obtain independent production approval tied to source SHA, image digest
-      and runtime fingerprint.
+### Remote registry credentials are run-scoped and ephemeral
+
+Every remote image pull now uses a run-specific `DOCKER_CONFIG` directory under
+`/tmp`. A shell trap logs out and removes the directory. The final cleanup step
+also removes residual directories for the same workflow run and attempt.
+
+The deployment account's default Docker configuration is not used for GHCR
+credentials.
+
+## Additional hardening completed
+
+- Every non-pushing checkout disables persisted Git credentials.
+- External Actions are pinned to complete commit SHAs.
+- Workflow policy is parsed as YAML, including job-level reusable-workflow
+  references and flow-style syntax; grep is no longer the authoritative parser.
+- Manual audit and deployment workflows reject terminal `/.` and `/..` path
+  components in addition to traversal and repeated separators.
+- Image publication depends on successful source, deployment-policy, branch
+  governance and gateway validation.
+- Staging now restores the verified previous image if any candidate, canary,
+  rollback-rehearsal or restoration gate fails.
+- The candidate is recorded as current only after the candidate canary,
+  rollback rehearsal, rollback canary, candidate restoration and restored
+  canary all succeed.
+- Deployment packages exclude runtime environment files and secrets.
+- Runtime inventory and deployment use pinned `known_hosts`; `ssh-keyscan` is
+  forbidden.
+- All initial staging and production paths require:
+
+```text
+ENABLE_EXTERNAL_DELIVERY=false
+ENABLE_REGISTRY_ENRICHMENT=false
+```
+
+## Validation performed without a live host
+
+The corrected branch was validated locally without connecting to a remote
+server:
+
+- parsed workflow policy: pass;
+- Bash syntax and ShellCheck: pass;
+- deployment-scaffolding policy: pass;
+- locked dependency installation: pass;
+- lint and strict TypeScript: pass;
+- unit and contract tests: pass;
+- real disposable PostgreSQL 17 and Redis 7.4 integration tests: pass;
+- migration, rollback/reapply, lease and replay tests: pass;
+- production Docker image build: pass;
+- Docker Compose configuration validation: pass;
+- isolated Kong/Caddy TLS, mTLS, allowlist, request-size and rate-limit tests:
+  pass;
+- `git diff --check`: pass.
+
+GitHub Actions on the unchanged final PR head remain the authoritative review
+gates.
+
+## Required controls before read-only runtime inventory
+
+1. The corrected PR must have green exact-head `validate`,
+   `deployment-policy` and `gateway` checks.
+2. A different human reviewer must approve the unchanged final SHA.
+3. Review conversations must be resolved.
+4. The release branch protection policy must be applied and independently
+   verified through the authorized governance path.
+5. The reviewed manual inventory workflow must be available through the
+   approved default control-plane lineage.
+6. `staging-runtime-audit` or `production-runtime-audit` must use a non-root,
+   least-privilege SSH identity without Docker-group access.
+7. The host key must be verified out of band and pinned in the protected
+   environment.
+
+## Required controls before staging deployment
+
+1. Run **Runtime path inventory (read only)**.
+2. Review the complete artifact and confirm `server_modified=false`.
+3. Confirm `ready_for_write_disabled_deploy=true`.
+4. Record the exact runtime fingerprint in the change record.
+5. Publish and verify the exact release image and the approved rollback image.
+6. Approve the staging environment with the exact source SHA, candidate digest,
+   previous digest and runtime fingerprint.
+7. Run the write-disabled staging deployment, no-write canary, rollback
+   rehearsal and candidate-restoration canary.
+
+## Required controls before production deployment
+
+Production remains blocked until the staging evidence and rollback evidence are
+reviewed, an explicit production approval names the unchanged source SHA,
+candidate digest, rollback digest and runtime fingerprint, and the production
+environment approval is granted by an authorized person other than the author
+where policy requires it.
+
+The next permitted remote action is the read-only runtime inventory. A remote
+deployment is not the next permitted action.
