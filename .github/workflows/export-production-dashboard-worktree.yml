@@ -1,0 +1,44 @@
+name: Export production dashboard worktree
+
+on:
+  push:
+    branches:
+      - feature/operations-dashboard-production-v2
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: export-production-dashboard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Export exact tracked source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD > SOURCE_SHA
+          git rev-parse 'HEAD^{tree}' > SOURCE_TREE
+          git archive --format=tar.gz --output=production-dashboard-worktree.tgz HEAD
+          sha256sum production-dashboard-worktree.tgz > SHA256SUMS
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: production-dashboard-worktree-${{ github.sha }}
+          path: |
+            production-dashboard-worktree.tgz
+            SOURCE_SHA
+            SOURCE_TREE
+            SHA256SUMS
+          if-no-files-found: error
+          retention-days: 1
