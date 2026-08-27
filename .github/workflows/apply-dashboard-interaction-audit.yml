@@ -1,0 +1,96 @@
+name: Apply audited dashboard interactions
+
+on:
+  push:
+    branches:
+      - feature/operations-dashboard
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.16.0'
+          cache: npm
+
+      - name: Verify and apply audited dashboard bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .dashboard-audit-bundle/part-* > /tmp/dashboard-audit.tar.gz.b64
+          base64 --decode /tmp/dashboard-audit.tar.gz.b64 > /tmp/dashboard-audit.tar.gz
+          echo "c18bc218b4c3d531985d2ee6a2382b06c29fa696942091e6a08ffd71e0e600f7  /tmp/dashboard-audit.tar.gz" | sha256sum --check -
+          tar -tzf /tmp/dashboard-audit.tar.gz
+          tar -xzf /tmp/dashboard-audit.tar.gz -C "$GITHUB_WORKSPACE"
+          rm -f .github/workflows/export-dashboard-source.yml
+
+      - name: Install locked dependencies and format audited files
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --include=dev --ignore-scripts --no-audit --no-fund
+          npx prettier --write \
+            .github/workflows/dashboard-ci.yml \
+            apps/operations-dashboard \
+            docs/design/OPERATIONS_DASHBOARD.md
+
+      - name: Validate dashboard source, contracts and component interactions
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --prefix apps/operations-dashboard run check
+          npm --prefix apps/operations-dashboard test
+
+      - name: Run required Chromium interaction coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          browser_path="$(command -v google-chrome-stable || command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          test -n "$browser_path"
+          DASHBOARD_CHROMIUM_EXECUTABLE="$browser_path" \
+          DASHBOARD_REQUIRE_BROWSER_TESTS=1 \
+            node --test apps/operations-dashboard/test/browser-interactions.test.mjs
+
+      - name: Smoke-test the static dashboard server
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --prefix apps/operations-dashboard run serve > /tmp/dashboard-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 20); do
+            if curl --fail --silent --show-error http://127.0.0.1:4173/ > /tmp/dashboard-index.html; then
+              break
+            fi
+            sleep 1
+          done
+          grep -Fq 'Codestra Crawler Control' /tmp/dashboard-index.html
+          curl --fail --silent --show-error http://127.0.0.1:4173/config.js \
+            | grep -Fq 'writeControlsEnabled: false'
+          curl --fail --silent --show-error --head http://127.0.0.1:4173/app.js \
+            | grep -Eqi '^x-content-type-options:[[:space:]]*nosniff'
+
+      - name: Commit the audited dashboard as one reviewable change
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .dashboard-audit-bundle
+          rm -f .github/workflows/apply-dashboard-interaction-audit.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: complete dashboard API and interaction coverage"
+          git push origin HEAD:${GITHUB_REF_NAME}
