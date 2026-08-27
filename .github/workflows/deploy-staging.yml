@@ -8,11 +8,11 @@ on:
         required: true
         type: string
       release_sha:
-        description: Reviewed 40-character source SHA from the protected release branch
+        description: Exact current SHA of the protected release branch
         required: true
         type: string
       previous_image_ref:
-        description: Previous immutable scraper image used for rollback testing
+        description: Previously approved immutable scraper image for rollback
         required: true
         type: string
       runtime_root:
@@ -37,7 +37,7 @@ on:
         default: '3200'
         type: string
       approval:
-        description: Enter DEPLOY-STAGING <release_sha> <image_ref> <runtime_fingerprint>
+        description: Enter DEPLOY-STAGING <release_sha> <image_ref> <previous_image_ref> <runtime_fingerprint>
         required: true
         type: string
 
@@ -52,14 +52,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  verify-artifact:
+  verify_artifact:
     name: verify-artifact
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     permissions:
       contents: read
       packages: read
       attestations: read
+      checks: read
     env:
       GH_TOKEN: ${{ github.token }}
       IMAGE_REF: ${{ inputs.image_ref }}
@@ -72,8 +73,9 @@ jobs:
         with:
           ref: ${{ inputs.release_sha }}
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Validate immutable inputs and digest-bound approval
+      - name: Validate immutable digest-bound inputs
         shell: bash
         run: |
           set -euo pipefail
@@ -81,19 +83,13 @@ jobs:
           [[ "$RUNTIME_FINGERPRINT" =~ ^[a-f0-9]{64}$ ]]
           [[ "$IMAGE_REF" =~ ^ghcr\.io/appolon1908-hue/scrapper@sha256:[a-f0-9]{64}$ ]]
           [[ "$PREVIOUS_IMAGE_REF" =~ ^ghcr\.io/appolon1908-hue/scrapper@sha256:[a-f0-9]{64}$ ]]
-          [[ "$APPROVAL" == "DEPLOY-STAGING $RELEASE_SHA $IMAGE_REF $RUNTIME_FINGERPRINT" ]]
+          [[ "$IMAGE_REF" != "$PREVIOUS_IMAGE_REF" ]]
+          [[ "$APPROVAL" == "DEPLOY-STAGING $RELEASE_SHA $IMAGE_REF $PREVIOUS_IMAGE_REF $RUNTIME_FINGERPRINT" ]]
           [[ "$(git rev-parse HEAD)" == "$RELEASE_SHA" ]]
 
-      - name: Require protected release lineage
+      - name: Require exact protected release head and exact-SHA checks
         shell: bash
-        run: |
-          set -euo pipefail
-          encoded_branch="$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["RELEASE_BRANCH"], safe=""))')"
-          branch_json="$(gh api "repos/${GITHUB_REPOSITORY}/branches/${encoded_branch}")"
-          [[ "$(jq -r '.protected' <<<"$branch_json")" == "true" ]]
-          branch_sha="$(jq -r '.commit.sha' <<<"$branch_json")"
-          git fetch --no-tags origin "refs/heads/$RELEASE_BRANCH:refs/remotes/origin/release-candidate"
-          git merge-base --is-ancestor "$RELEASE_SHA" "$branch_sha"
+        run: bash scripts/verify-release-context.sh
 
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
@@ -103,22 +99,21 @@ jobs:
 
       - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
 
-      - name: Verify image revision signature and attestation
+      - name: Verify candidate signature provenance and exact revision
+        env:
+          IMAGE_RELATIONSHIP: exact
         shell: bash
-        run: |
-          set -euo pipefail
-          docker pull "$IMAGE_REF"
-          revision="$(docker image inspect "$IMAGE_REF" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
-          [[ "$revision" == "$RELEASE_SHA" ]]
-          cosign verify \
-            --certificate-identity-regexp "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release-readiness.yml@.*" \
-            --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-            "$IMAGE_REF" >/dev/null
-          gh attestation verify "oci://$IMAGE_REF" --repo "$GITHUB_REPOSITORY"
+        run: bash scripts/verify-release-image.sh "$IMAGE_REF" "$IMAGE_RELATIONSHIP"
 
-  runtime-preflight:
+      - name: Verify rollback signature provenance and release ancestry
+        env:
+          IMAGE_RELATIONSHIP: ancestor
+        shell: bash
+        run: bash scripts/verify-release-image.sh "$PREVIOUS_IMAGE_REF" "$IMAGE_RELATIONSHIP"
+
+  runtime_preflight:
     name: runtime-preflight
-    needs: verify-artifact
+    needs: verify_artifact
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: staging-runtime-audit
@@ -137,6 +132,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ inputs.release_sha }}
+          persist-credentials: false
 
       - name: Configure read-only SSH identity and pinned host keys
         shell: bash
@@ -148,12 +144,11 @@ jobs:
           [[ "$RUNTIME_USER" =~ ^[A-Za-z0-9._-]+$ ]]
           [[ "$RUNTIME_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
           [[ "$RUNTIME_SSH_PORT" =~ ^[0-9]{1,5}$ ]]
-          (( RUNTIME_SSH_PORT >= 1 && RUNTIME_SSH_PORT <= 65535 ))
           for path in "$RUNTIME_ROOT" "$RUNTIME_ENV_FILE" "$RUNTIME_SECRETS_ROOT"; do
             [[ "$path" =~ ^/[A-Za-z0-9._/-]+$ ]]
-            [[ "$path" != "/" && "$path" != *"//"* && "$path" != *"/../"* && "$path" != *"/./"* ]]
+            [[ "$path" != "/" && "$path" != *"//"* && "$path" != *"/../"* &&
+               "$path" != *"/./"* && "$path" != */.. && "$path" != */. ]]
           done
-          [[ "$EXPECTED_API_PORT" =~ ^[0-9]{1,5}$ ]]
           install -m 0700 -d "$HOME/.ssh"
           printf '%s\n' "$RUNTIME_SSH_KEY" > "$HOME/.ssh/id_ed25519"
           chmod 0600 "$HOME/.ssh/id_ed25519"
@@ -165,25 +160,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p runtime-evidence
-          ssh_options=(
-            -i "$HOME/.ssh/id_ed25519"
-            -p "$RUNTIME_SSH_PORT"
-            -o BatchMode=yes
-            -o ConnectTimeout=10
-            -o IdentitiesOnly=yes
-            -o StrictHostKeyChecking=yes
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
-          )
+          ssh_options=(-i "$HOME/.ssh/id_ed25519" -p "$RUNTIME_SSH_PORT" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
           ssh "${ssh_options[@]}" "$RUNTIME_USER@$RUNTIME_HOST" bash -s -- \
             "$RUNTIME_ROOT" "$RUNTIME_ENV_FILE" "$RUNTIME_SECRETS_ROOT" "$EXPECTED_API_PORT" \
-            < scripts/runtime-path-inventory.sh \
-            | tee runtime-evidence/preflight-observation.txt
-          awk '
-            /^BEGIN_CONTRACT$/ { capture=1; next }
-            /^END_CONTRACT$/ { capture=0 }
-            capture { print }
-          ' runtime-evidence/preflight-observation.txt \
-            | LC_ALL=C sort > runtime-evidence/preflight-contract.txt
+            < scripts/runtime-path-inventory.sh | tee runtime-evidence/preflight-observation.txt
+          awk '/^BEGIN_CONTRACT$/ {capture=1; next} /^END_CONTRACT$/ {capture=0} capture {print}' \
+            runtime-evidence/preflight-observation.txt | LC_ALL=C sort > runtime-evidence/preflight-contract.txt
           actual="$(sha256sum runtime-evidence/preflight-contract.txt | awk '{print $1}')"
           [[ "$actual" == "$RUNTIME_FINGERPRINT" ]]
           grep -qx 'ready_for_write_disabled_deploy=true' runtime-evidence/preflight-contract.txt
@@ -199,9 +181,9 @@ jobs:
 
   deploy:
     name: deploy
-    needs: [verify-artifact, runtime-preflight]
+    needs: [verify_artifact, runtime_preflight]
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 75
     environment: staging
     env:
       STAGING_HOST: ${{ secrets.STAGING_HOST }}
@@ -227,12 +209,13 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ inputs.release_sha }}
+          persist-credentials: false
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22.16.0'
 
-      - name: Validate deployment credentials and explicit paths
+      - name: Validate deployment credentials and paths
         shell: bash
         run: |
           set -euo pipefail
@@ -245,7 +228,8 @@ jobs:
           [[ "$STAGING_SSH_PORT" =~ ^[0-9]{1,5}$ ]]
           for path in "$RUNTIME_ROOT" "$RUNTIME_ENV_FILE" "$RUNTIME_SECRETS_ROOT"; do
             [[ "$path" =~ ^/[A-Za-z0-9._/-]+$ ]]
-            [[ "$path" != "/" && "$path" != *"//"* && "$path" != *"/../"* && "$path" != *"/./"* ]]
+            [[ "$path" != "/" && "$path" != *"//"* && "$path" != *"/../"* &&
+               "$path" != *"/./"* && "$path" != */.. && "$path" != */. ]]
           done
 
       - name: Configure deployment SSH identity and pinned host keys
@@ -262,241 +246,132 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ssh_options=(
-            -i "$HOME/.ssh/id_ed25519"
-            -p "$STAGING_SSH_PORT"
-            -o BatchMode=yes
-            -o ConnectTimeout=10
-            -o IdentitiesOnly=yes
-            -o StrictHostKeyChecking=yes
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
-          )
+          ssh_options=(-i "$HOME/.ssh/id_ed25519" -p "$STAGING_SSH_PORT" -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
           ssh "${ssh_options[@]}" "$STAGING_USER@$STAGING_HOST" bash -s -- \
             "$RUNTIME_ROOT" "$RUNTIME_ENV_FILE" "$RUNTIME_SECRETS_ROOT" "$EXPECTED_API_PORT" \
             < scripts/runtime-path-inventory.sh > runtime-before-deploy.txt
-          awk '
-            /^BEGIN_CONTRACT$/ { capture=1; next }
-            /^END_CONTRACT$/ { capture=0 }
-            capture { print }
-          ' runtime-before-deploy.txt | LC_ALL=C sort > runtime-before-deploy.contract
+          awk '/^BEGIN_CONTRACT$/ {capture=1; next} /^END_CONTRACT$/ {capture=0} capture {print}' \
+            runtime-before-deploy.txt | LC_ALL=C sort > runtime-before-deploy.contract
           actual="$(sha256sum runtime-before-deploy.contract | awk '{print $1}')"
           [[ "$actual" == "$RUNTIME_FINGERPRINT" ]]
           grep -qx 'ready_for_write_disabled_deploy=true' runtime-before-deploy.contract
 
-      - name: Upload reviewed package after path verification
+      - name: Upload and extract the reviewed package
         shell: bash
         run: |
           set -euo pipefail
           archive="/tmp/scrapper-staging-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tgz"
-          tar -czf "$archive" \
-            docker-compose.yml \
-            deploy \
-            scripts/deploy-staging.sh \
-            scripts/rollback-staging.sh
+          tar -czf "$archive" docker-compose.yml deploy scripts/deploy-staging.sh scripts/rollback-staging.sh
           sha256sum "$archive" > "$archive.sha256"
-          ssh_options=(
-            -i "$HOME/.ssh/id_ed25519"
-            -p "$STAGING_SSH_PORT"
-            -o BatchMode=yes
-            -o IdentitiesOnly=yes
-            -o StrictHostKeyChecking=yes
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
-          )
-          scp_options=(
-            -i "$HOME/.ssh/id_ed25519"
-            -P "$STAGING_SSH_PORT"
-            -o BatchMode=yes
-            -o IdentitiesOnly=yes
-            -o StrictHostKeyChecking=yes
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
-          )
-          printf '%s' "$STAGING_GHCR_READ_TOKEN" | \
-            ssh "${ssh_options[@]}" "$STAGING_USER@$STAGING_HOST" \
-              "docker login ghcr.io -u '$STAGING_GHCR_USER' --password-stdin"
-          scp "${scp_options[@]}" "$archive" "$archive.sha256" \
-            "$STAGING_USER@$STAGING_HOST:/tmp/"
-
-      - name: Deploy candidate with external writes disabled
-        shell: bash
-        run: |
-          set -euo pipefail
-          remote_archive="/tmp/scrapper-staging-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tgz"
-          ssh_options=(
-            -i "$HOME/.ssh/id_ed25519"
-            -p "$STAGING_SSH_PORT"
-            -o BatchMode=yes
-            -o IdentitiesOnly=yes
-            -o StrictHostKeyChecking=yes
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
-          )
+          ssh_options=(-i "$HOME/.ssh/id_ed25519" -p "$STAGING_SSH_PORT" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          scp_options=(-i "$HOME/.ssh/id_ed25519" -P "$STAGING_SSH_PORT" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          scp "${scp_options[@]}" "$archive" "$archive.sha256" "$STAGING_USER@$STAGING_HOST:/tmp/"
           ssh "${ssh_options[@]}" "$STAGING_USER@$STAGING_HOST" bash -s -- \
-            "$RUNTIME_ROOT" "$RUNTIME_ENV_FILE" "$RUNTIME_SECRETS_ROOT" \
-            "$EXPECTED_API_PORT" "$RELEASE_SHA" "$IMAGE_REF" "$remote_archive" <<'REMOTE'
+            "$RUNTIME_ROOT" "$RELEASE_SHA" "$archive" <<'REMOTE'
           set -euo pipefail
-          root="$1"
-          env_file="$2"
-          secrets_root="$3"
-          api_port="$4"
-          release_sha="$5"
-          image="$6"
-          archive="$7"
-
-          [[ -d "$root" && ! -L "$root" ]]
-          [[ -f "$env_file" && ! -L "$env_file" ]]
-          [[ -d "$secrets_root" && ! -L "$secrets_root" ]]
-          grep -Eq '^[[:space:]]*ENABLE_EXTERNAL_DELIVERY[[:space:]]*=[[:space:]]*false[[:space:]]*$' "$env_file"
-          grep -Eq '^[[:space:]]*ENABLE_REGISTRY_ENRICHMENT[[:space:]]*=[[:space:]]*false[[:space:]]*$' "$env_file"
+          root="$1"; release_sha="$2"; archive="$3"
           (cd /tmp && sha256sum -c "$(basename "$archive").sha256")
-          if tar -tzf "$archive" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
-            echo "ERROR=UNSAFE_ARCHIVE_PATH" >&2
-            exit 1
-          fi
-
+          if tar -tzf "$archive" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then exit 1; fi
           release_dir="$root/releases/$release_sha"
           install -d -m 0750 "$root/releases" "$release_dir"
           tar -xzf "$archive" --no-same-owner --no-same-permissions -C "$release_dir"
-          cd "$release_dir"
-          printf '%s\n' "$release_sha" > .source_sha
-          sha256sum "$archive" | awk '{print $1}' > .package_sha256
-          CANDIDATE_SCRAPPER_IMAGE="$image" \
-          DEPLOY_ENV_FILE="$env_file" \
-          EVIDENCE_DIR="release-evidence/staging" \
-          READINESS_URL="http://127.0.0.1:$api_port/readyz" \
-          RELEASE_SHA="$release_sha" \
-            bash scripts/deploy-staging.sh
-          rm -f "$archive" "$archive.sha256"
+          printf '%s\n' "$release_sha" > "$release_dir/.source_sha"
           REMOTE
 
-      - name: Run no-write canary from the isolated runner
+      - name: Deploy candidate with run-scoped registry credentials
+        id: candidate
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p runner-evidence/staging
-          RELEASE_SHA="$RELEASE_SHA" node scripts/no-write-canary.mjs \
-            | tee runner-evidence/staging/no-write-canary.json
+          ssh_options=(-i "$HOME/.ssh/id_ed25519" -p "$STAGING_SSH_PORT" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          docker_config="/tmp/scrapper-docker-auth-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-candidate"
+          printf '%s' "$STAGING_GHCR_READ_TOKEN" | ssh "${ssh_options[@]}" "$STAGING_USER@$STAGING_HOST" \
+            "set -euo pipefail; docker_config='$docker_config'; cleanup(){ DOCKER_CONFIG=\"\$docker_config\" docker logout ghcr.io >/dev/null 2>&1 || true; rm -rf \"\$docker_config\"; }; trap cleanup EXIT; install -d -m 0700 \"\$docker_config\"; DOCKER_CONFIG=\"\$docker_config\" docker login ghcr.io -u '$STAGING_GHCR_USER' --password-stdin >/dev/null; export DOCKER_CONFIG=\"\$docker_config\"; cd '$RUNTIME_ROOT/releases/$RELEASE_SHA'; CANDIDATE_SCRAPPER_IMAGE='$IMAGE_REF' DEPLOY_ENV_FILE='$RUNTIME_ENV_FILE' EVIDENCE_DIR='release-evidence/staging' READINESS_URL='http://127.0.0.1:$EXPECTED_API_PORT/readyz' RELEASE_SHA='$RELEASE_SHA' bash scripts/deploy-staging.sh"
 
-      - name: Exercise rollback to the previous immutable image
+      - name: Run candidate no-write canary
+        id: candidate_canary
+        if: steps.candidate.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          mkdir -p runner-evidence/candidate
+          RELEASE_SHA="$RELEASE_SHA" node scripts/no-write-canary.mjs | tee runner-evidence/candidate/no-write-canary.json
+
+      - name: Exercise rollback to the verified previous image
+        id: rollback
+        if: always()
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
-          ssh_options=(
-            -i "$HOME/.ssh/id_ed25519"
-            -p "$STAGING_SSH_PORT"
-            -o BatchMode=yes
-            -o IdentitiesOnly=yes
-            -o StrictHostKeyChecking=yes
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
-          )
-          ssh "${ssh_options[@]}" "$STAGING_USER@$STAGING_HOST" bash -s -- \
-            "$RUNTIME_ROOT" "$RUNTIME_ENV_FILE" "$EXPECTED_API_PORT" \
-            "$RELEASE_SHA" "$PREVIOUS_IMAGE_REF" <<'REMOTE'
-          set -euo pipefail
-          root="$1"
-          env_file="$2"
-          api_port="$3"
-          release_sha="$4"
-          previous="$5"
-          cd "$root/releases/$release_sha"
-          PREVIOUS_SCRAPPER_IMAGE="$previous" \
-          DEPLOY_ENV_FILE="$env_file" \
-          EVIDENCE_DIR="release-evidence/rollback" \
-          READINESS_URL="http://127.0.0.1:$api_port/readyz" \
-            bash scripts/rollback-staging.sh
-          REMOTE
+          ssh_options=(-i "$HOME/.ssh/id_ed25519" -p "$STAGING_SSH_PORT" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          docker_config="/tmp/scrapper-docker-auth-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-rollback"
+          printf '%s' "$STAGING_GHCR_READ_TOKEN" | ssh "${ssh_options[@]}" "$STAGING_USER@$STAGING_HOST" \
+            "set -euo pipefail; docker_config='$docker_config'; cleanup(){ DOCKER_CONFIG=\"\$docker_config\" docker logout ghcr.io >/dev/null 2>&1 || true; rm -rf \"\$docker_config\"; }; trap cleanup EXIT; install -d -m 0700 \"\$docker_config\"; DOCKER_CONFIG=\"\$docker_config\" docker login ghcr.io -u '$STAGING_GHCR_USER' --password-stdin >/dev/null; export DOCKER_CONFIG=\"\$docker_config\"; cd '$RUNTIME_ROOT/releases/$RELEASE_SHA'; PREVIOUS_SCRAPPER_IMAGE='$PREVIOUS_IMAGE_REF' DEPLOY_ENV_FILE='$RUNTIME_ENV_FILE' EVIDENCE_DIR='release-evidence/rollback' READINESS_URL='http://127.0.0.1:$EXPECTED_API_PORT/readyz' bash scripts/rollback-staging.sh"
+
+      - name: Run rollback no-write canary
+        id: rollback_canary
+        if: steps.rollback.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
           mkdir -p runner-evidence/rollback
-          RELEASE_SHA="rollback-$RELEASE_SHA" node scripts/no-write-canary.mjs \
-            | tee runner-evidence/rollback/no-write-canary.json
+          RELEASE_SHA="rollback-$RELEASE_SHA" node scripts/no-write-canary.mjs | tee runner-evidence/rollback/no-write-canary.json
 
-      - name: Restore candidate and rerun the no-write canary
+      - name: Restore candidate after successful rehearsal
+        id: restore
+        if: always() && steps.candidate.outcome == 'success' && steps.candidate_canary.outcome == 'success' && steps.rollback.outcome == 'success' && steps.rollback_canary.outcome == 'success'
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
-          ssh_options=(
-            -i "$HOME/.ssh/id_ed25519"
-            -p "$STAGING_SSH_PORT"
-            -o BatchMode=yes
-            -o IdentitiesOnly=yes
-            -o StrictHostKeyChecking=yes
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
-          )
-          ssh "${ssh_options[@]}" "$STAGING_USER@$STAGING_HOST" bash -s -- \
-            "$RUNTIME_ROOT" "$RUNTIME_ENV_FILE" "$EXPECTED_API_PORT" \
-            "$RELEASE_SHA" "$IMAGE_REF" <<'REMOTE'
-          set -euo pipefail
-          root="$1"
-          env_file="$2"
-          api_port="$3"
-          release_sha="$4"
-          candidate="$5"
-          cd "$root/releases/$release_sha"
-          CANDIDATE_SCRAPPER_IMAGE="$candidate" \
-          DEPLOY_ENV_FILE="$env_file" \
-          EVIDENCE_DIR="release-evidence/restored-candidate" \
-          READINESS_URL="http://127.0.0.1:$api_port/readyz" \
-          RELEASE_SHA="$release_sha" \
-            bash scripts/deploy-staging.sh
-          REMOTE
+          ssh_options=(-i "$HOME/.ssh/id_ed25519" -p "$STAGING_SSH_PORT" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          docker_config="/tmp/scrapper-docker-auth-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-restore"
+          printf '%s' "$STAGING_GHCR_READ_TOKEN" | ssh "${ssh_options[@]}" "$STAGING_USER@$STAGING_HOST" \
+            "set -euo pipefail; docker_config='$docker_config'; cleanup(){ DOCKER_CONFIG=\"\$docker_config\" docker logout ghcr.io >/dev/null 2>&1 || true; rm -rf \"\$docker_config\"; }; trap cleanup EXIT; install -d -m 0700 \"\$docker_config\"; DOCKER_CONFIG=\"\$docker_config\" docker login ghcr.io -u '$STAGING_GHCR_USER' --password-stdin >/dev/null; export DOCKER_CONFIG=\"\$docker_config\"; cd '$RUNTIME_ROOT/releases/$RELEASE_SHA'; CANDIDATE_SCRAPPER_IMAGE='$IMAGE_REF' DEPLOY_ENV_FILE='$RUNTIME_ENV_FILE' EVIDENCE_DIR='release-evidence/restored-candidate' READINESS_URL='http://127.0.0.1:$EXPECTED_API_PORT/readyz' RELEASE_SHA='$RELEASE_SHA' bash scripts/deploy-staging.sh"
+
+      - name: Run restored candidate no-write canary
+        id: restored_canary
+        if: steps.restore.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
           mkdir -p runner-evidence/restored-candidate
-          RELEASE_SHA="$RELEASE_SHA" node scripts/no-write-canary.mjs \
-            | tee runner-evidence/restored-candidate/no-write-canary.json
+          RELEASE_SHA="$RELEASE_SHA" node scripts/no-write-canary.mjs | tee runner-evidence/restored-candidate/no-write-canary.json
 
-      - name: Record candidate identity only after canary and rollback pass
+      - name: Restore previous image if any candidate gate failed
+        id: safety_rollback
+        if: always() && (steps.candidate.outcome != 'success' || steps.candidate_canary.outcome != 'success' || steps.rollback.outcome != 'success' || steps.rollback_canary.outcome != 'success' || steps.restore.outcome != 'success' || steps.restored_canary.outcome != 'success')
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
-          ssh_options=(
-            -i "$HOME/.ssh/id_ed25519"
-            -p "$STAGING_SSH_PORT"
-            -o BatchMode=yes
-            -o IdentitiesOnly=yes
-            -o StrictHostKeyChecking=yes
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
-          )
-          ssh "${ssh_options[@]}" "$STAGING_USER@$STAGING_HOST" bash -s -- \
-            "$RUNTIME_ROOT" "$RELEASE_SHA" "$IMAGE_REF" "$PREVIOUS_IMAGE_REF" <<'REMOTE'
-          set -euo pipefail
-          root="$1"
-          release_sha="$2"
-          candidate="$3"
-          previous="$4"
-          printf '%s\n' "$previous" > "$root/.previous_image"
-          printf '%s\n' "$candidate" > "$root/.current_image"
-          printf '%s\n' "$release_sha" > "$root/.current_release"
-          REMOTE
+          ssh_options=(-i "$HOME/.ssh/id_ed25519" -p "$STAGING_SSH_PORT" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          docker_config="/tmp/scrapper-docker-auth-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-safety"
+          printf '%s' "$STAGING_GHCR_READ_TOKEN" | ssh "${ssh_options[@]}" "$STAGING_USER@$STAGING_HOST" \
+            "set -euo pipefail; docker_config='$docker_config'; cleanup(){ DOCKER_CONFIG=\"\$docker_config\" docker logout ghcr.io >/dev/null 2>&1 || true; rm -rf \"\$docker_config\"; }; trap cleanup EXIT; install -d -m 0700 \"\$docker_config\"; DOCKER_CONFIG=\"\$docker_config\" docker login ghcr.io -u '$STAGING_GHCR_USER' --password-stdin >/dev/null; export DOCKER_CONFIG=\"\$docker_config\"; cd '$RUNTIME_ROOT/releases/$RELEASE_SHA'; PREVIOUS_SCRAPPER_IMAGE='$PREVIOUS_IMAGE_REF' DEPLOY_ENV_FILE='$RUNTIME_ENV_FILE' EVIDENCE_DIR='release-evidence/safety-rollback' READINESS_URL='http://127.0.0.1:$EXPECTED_API_PORT/readyz' bash scripts/rollback-staging.sh"
 
-      - name: Collect deployment evidence and remove registry credentials
+      - name: Record candidate identity only after every gate passes
+        if: steps.candidate.outcome == 'success' && steps.candidate_canary.outcome == 'success' && steps.rollback.outcome == 'success' && steps.rollback_canary.outcome == 'success' && steps.restore.outcome == 'success' && steps.restored_canary.outcome == 'success'
+        shell: bash
+        run: |
+          ssh_options=(-i "$HOME/.ssh/id_ed25519" -p "$STAGING_SSH_PORT" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          ssh "${ssh_options[@]}" "$STAGING_USER@$STAGING_HOST" \
+            "printf '%s\n' '$PREVIOUS_IMAGE_REF' > '$RUNTIME_ROOT/.previous_image'; printf '%s\n' '$IMAGE_REF' > '$RUNTIME_ROOT/.current_image'; printf '%s\n' '$RELEASE_SHA' > '$RUNTIME_ROOT/.current_release'"
+
+      - name: Collect evidence and remove temporary files
         if: always()
         shell: bash
         run: |
-          ssh_options=(
-            -i "$HOME/.ssh/id_ed25519"
-            -p "$STAGING_SSH_PORT"
-            -o BatchMode=yes
-            -o IdentitiesOnly=yes
-            -o StrictHostKeyChecking=yes
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
-          )
-          scp_options=(
-            -i "$HOME/.ssh/id_ed25519"
-            -P "$STAGING_SSH_PORT"
-            -o BatchMode=yes
-            -o IdentitiesOnly=yes
-            -o StrictHostKeyChecking=yes
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
-          )
+          archive="/tmp/scrapper-staging-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tgz"
+          ssh_options=(-i "$HOME/.ssh/id_ed25519" -p "$STAGING_SSH_PORT" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          scp_options=(-i "$HOME/.ssh/id_ed25519" -P "$STAGING_SSH_PORT" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
           remote_evidence="/tmp/scrapper-staging-evidence-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tgz"
-          ssh "${ssh_options[@]}" "$STAGING_USER@$STAGING_HOST" bash -s -- \
-            "$RUNTIME_ROOT" "$RELEASE_SHA" "$remote_evidence" <<'REMOTE' || true
-          set -euo pipefail
-          root="$1"
-          release_sha="$2"
-          destination="$3"
-          cd "$root/releases/$release_sha"
-          tar -czf "$destination" release-evidence
-          REMOTE
-          scp "${scp_options[@]}" "$STAGING_USER@$STAGING_HOST:$remote_evidence" ./ || true
           ssh "${ssh_options[@]}" "$STAGING_USER@$STAGING_HOST" \
-            "rm -f '$remote_evidence'; docker logout ghcr.io >/dev/null 2>&1 || true" || true
+            "cd '$RUNTIME_ROOT/releases/$RELEASE_SHA' && tar -czf '$remote_evidence' release-evidence; find /tmp -maxdepth 1 -type d -name 'scrapper-docker-auth-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-*' -exec rm -rf -- {} +; rm -f '$archive' '$archive.sha256'" || true
+          scp "${scp_options[@]}" "$STAGING_USER@$STAGING_HOST:$remote_evidence" ./ || true
+          ssh "${ssh_options[@]}" "$STAGING_USER@$STAGING_HOST" "rm -f '$remote_evidence'" || true
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
@@ -509,3 +384,14 @@ jobs:
             runtime-before-deploy.contract
           if-no-files-found: warn
           retention-days: 30
+
+      - name: fail-after-rollback
+        if: always() && (steps.candidate.outcome != 'success' || steps.candidate_canary.outcome != 'success' || steps.rollback.outcome != 'success' || steps.rollback_canary.outcome != 'success' || steps.restore.outcome != 'success' || steps.restored_canary.outcome != 'success')
+        shell: bash
+        run: |
+          if [[ "${{ steps.safety_rollback.outcome }}" == "success" ]]; then
+            echo 'A staging gate failed; the verified previous image was restored and the candidate was not recorded.' >&2
+          else
+            echo 'A staging gate failed and the safety rollback did not complete successfully.' >&2
+          fi
+          exit 1
