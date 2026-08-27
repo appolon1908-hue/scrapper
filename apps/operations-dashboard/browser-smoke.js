@@ -43,7 +43,9 @@ function rowCount() {
 
 function resultCount() {
   return new Set(
-    [...document.querySelectorAll('[data-open-result]')].map((element) => element.dataset.openResult),
+    [...document.querySelectorAll('[data-open-result]')].map(
+      (element) => element.dataset.openResult,
+    ),
   ).size;
 }
 
@@ -100,13 +102,18 @@ export async function runBrowserSmoke() {
     const seedUrls = document.querySelector('textarea[name="seedUrls"]');
     setValue(seedUrls, 'https://manual-smoke.example/');
     await wait(30);
-    assert(document.querySelector('select[name="profile"]').value === 'contacts', 'typing seed URLs preserves other form state');
+    assert(
+      document.querySelector('select[name="profile"]').value === 'contacts',
+      'typing seed URLs preserves other form state',
+    );
 
     const fileInput = document.querySelector('[data-import-file]');
     const transfer = new DataTransfer();
     transfer.items.add(
       new File(
-        ['business_name,website\nSmoke One,smoke-one.example\nSmoke Duplicate,https://smoke-one.example/\n'],
+        [
+          'business_name,website\nSmoke One,smoke-one.example\nSmoke Duplicate,https://smoke-one.example/\n',
+        ],
         'smoke-companies.csv',
         { type: 'text/csv' },
       ),
@@ -114,11 +121,16 @@ export async function runBrowserSmoke() {
     fileInput.files = transfer.files;
     fileInput.dispatchEvent(new Event('change', { bubbles: true }));
     await waitFor(() => document.querySelector('[data-apply-import]'), 'import preview');
-    assert(document.querySelector('.import-preview')?.textContent.includes('1 valid websites'), 'import preview summarizes valid URL');
+    assert(
+      document.querySelector('.import-preview')?.textContent.includes('1 valid websites'),
+      'import preview summarizes valid URL',
+    );
     click('[data-apply-import]', 'apply import');
     await wait(30);
     assert(
-      document.querySelector('textarea[name="seedUrls"]').value.includes('https://smoke-one.example/'),
+      document
+        .querySelector('textarea[name="seedUrls"]')
+        .value.includes('https://smoke-one.example/'),
       'import applies to targets',
     );
     assert(
@@ -133,7 +145,10 @@ export async function runBrowserSmoke() {
       () => document.querySelector('#job-drawer')?.getAttribute('aria-hidden') === 'false',
       'new crawl drawer',
     );
-    assert(document.querySelector('#job-drawer')?.textContent.includes('manual-smoke.example'), 'new crawl simulation uses submitted targets');
+    assert(
+      document.querySelector('#job-drawer')?.textContent.includes('manual-smoke.example'),
+      'new crawl simulation uses submitted targets',
+    );
     click('[data-close-drawer]', 'close new crawl drawer');
     recordCheck(checks, 'import-form-submit');
 
@@ -154,28 +169,65 @@ export async function runBrowserSmoke() {
 
     click('[data-open-result]', 'open result drawer');
     await waitFor(
-      () => document.querySelectoŠ	ÈÚ›Ø‹Y˜]Ù\‰ÊOË™Ù]]šX]J	Ø\šXKZY[‰ÊHOOH	Ù˜[ÙIËˆ	Ü™\Ý[˜]Ù\‰Ëˆ
-NÂˆ\ÜÙ\
-ØÝ[Y[œ]Y\žTÙ[XÝÜŠ	ÈÚ›Ø‹Y˜]Ù\‰ÊOË^ÛÛ[š[˜ÛY\Ê	Ñ]šY[˜ÙIÊK	Ü™\Ý[˜]Ù\ˆ™[™\œÈ]šY[˜ÙHÝ]IÊNÂˆÛXÚÊ	ÖÙ]KXÛÜÙKY˜]Ù\—IË	ØÛÜÙH™\Ý[˜]Ù\‰ÊNÂ‚ˆÛXÚÊ	ÖÙ]KXÛX\‹\™\Ý[Yš[\œ×IË	ØÛX\ˆ™\Ý[š[\œÈYØZ[‰ÊNÂˆ]ØZ]ØZ]
-Ì
-NÂˆÛÛœÝ[˜ÚÜÛXÚÈHS[˜ÚÜ‘[[Y[œ›ÝÝ\K˜ÛXÚÎÂˆ]^ÜšYÙÙ\™YH˜[ÙNÂˆS[˜ÚÜ‘[[Y[œ›ÝÝ\K˜ÛXÚÈH[˜Ý[Ûˆ[\˜Ù\YÝÛ›ØY
+      () => document.querySelector('#job-drawer')?.getAttribute('aria-hidden') === 'false',
+      'result drawer',
+    );
+    assert(document.querySelector('#job-drawer')?.textContent.includes('Evidence'), 'result drawer renders evidence state');
+    click('[data-close-drawer]', 'close result drawer');
 
-HÂˆ^ÜšYÙÙ\™YHYNÂˆNÂˆžHÂˆÛXÚÊ	ÖÙ]KY^Ü\™\Ý[ÏH˜ÜÝˆ—IË	ÐÔÕˆ^Ü	ÊNÂˆHš[˜[HÂˆS[˜ÚÜ‘[[Y[œ›ÝÝ\K˜ÛXÚÈH[˜ÚÜÛXÚÎÂˆBˆ\ÜÙ\
-^ÜšYÙÙ\™Y	Ýš\ÚX›K\™\Ý[ÔÕˆ^Ü\ÈšYÙÙ\™Y	ÊNÂ‚ˆÙ]˜[YJØÝ[Y[œ]Y\žTÙ[XÝÜŠ	ÖÙ]K\™\Ý[\ÙX\˜ÚIÊK	ÙYš[š][K[›Ý\™\Ù[	ÊNÂˆ]ØZ]ØZ]
-Ì
-NÂˆ\ÜÙ\
-ØÝ[Y[œ]Y\žTÙ[XÝÜŠ	Ë™[\K\Ý]IÊOË^ÛÛ[š[˜ÛY\Ê	Ó›ÈX]Ú[™È™\Ý[ÉÊK	Ù[\Hš[\™YÝ]H™[™\œÉÊNÂˆ™XÛÜ™ÚXÚÊÚXÚÜË	Ü™\Ý[\ÙX\˜ÚYš[\‹Y˜]Ù\‹Y^ÜY[\IÊNÂ‚ˆ]ØZ]›Ý]J	Ú[YÜ˜][ÛœÉÊNÂˆÛXÚÊ	ÖÙ]K\[‹YXYÛ›ÜÝXÜ×IË	Ü[ˆXYÛ›ÜÝXÜÉÊNÂˆ]ØZ]ØZ]›ÜŠ
+    click('[data-clear-result-filters]', 'clear result filters again');
+    await wait(30);
+    const anchorClick = HTMLAnchorElement.prototype.click;
+    let exportTriggered = false;
+    HTMLAnchorElement.prototype.click = function interceptedDownload() {
+      exportTriggered = true;
+    };
+    try {
+      click('[data-export-results="csv"]', 'CSV export');
+    } finally {
+      HTMLAnchorElement.prototype.click = anchorClick;
+    }
+    assert(exportTriggered, 'visible-result CSV export is triggered');
 
-HOˆØÝ[Y[œ]Y\žTÙ[XÝÜ[
-	Ë™XYÛ›ÜÝXËXØ\™	ÊK›[™ÝOOHL	ÙXYÛ›ÜÝXÈØ\™ÉÊNÂˆ\ÜÙ\
-ˆË‹‹™ØÝ[Y[œ]Y\žTÙ[XÝÜ[
-	Ë™XYÛ›ÜÝXËXØ\™	ÊWK™]™\žJ
-Ø\™
-HOˆØ\™^ÛÛ[š[˜ÛY\Ê	ÜÚÚ\Y	ÊJKˆ	Ù[[ÈXYÛ›ÜÝXÜÈ™[XZ[ˆ^XÚ]HÚÚ\Y	Ëˆ
-NÂˆ™XÛÜ™ÚXÚÊÚXÚÜË	ÙXYÛ›ÜÝXÜËY]K\Ý]\ÉÊNÂ‚ˆÛXÚÊ	ÖÙ]K[Ü[‹\Ù][™Ü×IË	ÛÜ[ˆÙ][™ÜÉÊNÂˆ]ØZ]ØZ]›ÜŠ
+    setValue(document.querySelector('[data-result-search]'), 'definitely-not-present');
+    await wait(30);
+    assert(
+      document.querySelector('.empty-state')?.textContent.includes('No matching results'),
+      'empty filtered state renders',
+    );
+    recordCheck(checks, 'result-search-filter-drawer-export-empty');
 
-HOˆØÝ[Y[œ]Y\žTÙ[XÝÜŠ	ÈÜÙ][™ÜËYX[ÙÉÊOË›Ü[‹	ÜÙ][™ÜÈX[ÙÉÊNÂˆ\ÜÙ\
-ØÝ[Y[œ]Y\žTÙ[XÝÜŠ	ÈÜÙ][™ÜË]Üš]K\Ý]IÊOË^ÛÛ[š[˜ÛY\Ê	ÓØÚÙY	ÊK	ÜÙ][™ÜÈ™\ÜÈØÚÙYÜš]\ÉÊNÂˆØÝ[Y[œ]Y\žTÙ[XÝÜŠ	ÈÜÙ][™ÜËYX[ÙÉÊK˜ÛÜÙJ
-NÂˆ™XÛÜ™ÚXÚÊÚXÚÜË	ÜÙ][™ÜËYX[ÙÉÊNÂ‚ˆX\šÙ\‹^ÛÛ[H”“ÕÔÑT—ÔÓSÒÑOTTÔ×ÒPÒÔÏIØÚXÚÜËš›Ú[Š	Ë	Ê_XÂˆØÝ[Y[™ØÝ[Y[[[Y[™]\Ù]˜œ›ÝÜÙ\”Û[ÚÙHH	Ü\ÜÉÎÂˆHØ]Ú
-\œ›ÜŠHÂˆX\šÙ\‹^ÛÛ[H”“ÕÔÑT—ÔÓSÒÑOQRS‰Ù\œ›Üˆ[œÝ[˜Ù[Ùˆ\œ›ÜˆÈ\œ›Ü‹œÝXÚÈ\œ›Ü‹›Y\ÜØYÙHˆÝš[™Ê\œ›ÜŠ_XÂˆØÝ[Y[™ØÝ[Y[[[Y[™]\Ù]˜œ›ÝÜÙ\”Û[ÚÙHH	Ù˜Z[	ÎÂˆB‚ˆØÝ[Y[˜›ÙK˜\[™
-X\šÙ\ŠNÂŸB
+    await route('integrations');
+    click('[data-run-diagnostics]', 'run diagnostics');
+    await waitFor(
+      () => document.querySelectorAll('.diagnostic-card').length === 10,
+      'diagnostic cards',
+    );
+    assert(
+      [...document.querySelectorAll('.diagnostic-card')].every((card) =>
+        card.textContent.includes('skipped'),
+      ),
+      'demo diagnostics remain explicitly skipped',
+    );
+    recordCheck(checks, 'diagnostics-data-states');
+
+    click('[data-open-settings]', 'open settings');
+    await waitFor(() => document.querySelector('#settings-dialog')?.open, 'settings dialog');
+    assert(
+      document.querySelector('#settings-write-state')?.textContent.includes('Locked'),
+      'settings reports locked writes',
+    );
+    document.querySelector('#settings-dialog').close();
+    recordCheck(checks, 'settings-dialog');
+
+    marker.textContent = `BROWSER_SMOKE=PASS\nCHECKS=${checks.join(',')}`;
+    document.documentElement.dataset.browserSmoke = 'pass';
+  } catch (error) {
+    marker.textContent = `BROWSER_SMOKE=FAIL\n${
+      error instanceof Error ? error.stack || error.message : String(error)
+    }`;
+    document.documentElement.dataset.browserSmoke = 'fail';
+  }
+
+  document.body.append(marker);
+}
