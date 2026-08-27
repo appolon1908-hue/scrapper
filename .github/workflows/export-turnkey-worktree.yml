@@ -23,7 +23,7 @@ jobs:
           set -euo pipefail
           git rev-parse HEAD > SOURCE_SHA
           git status --short > SOURCE_STATUS
-          tar --exclude=.git --exclude=turnkey-worktree.tgz -czf turnkey-worktree.tgz .
+          git archive --format=tar.gz --output=turnkey-worktree.tgz HEAD
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: turnkey-worktree-${{ github.sha }}
