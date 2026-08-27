@@ -1,0 +1,15 @@
+{
+  "name": "@codestra/scrapper-operations-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Write-safe operations dashboard for the Codestra business scraper control plane",
+  "scripts": {
+    "check": "node --check app.js && node --check api-client.js && node --check components.js && node --check mock-data.js && node --check state.js && node scripts/validate.mjs",
+    "test": "node --test test/*.test.mjs",
+    "serve": "node scripts/serve.mjs"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

@@ -1,0 +1,61 @@
+name: Operations dashboard validation
+
+on:
+  pull_request:
+    paths:
+      - 'apps/operations-dashboard/**'
+      - 'docs/design/OPERATIONS_DASHBOARD.md'
+      - '.github/workflows/dashboard-ci.yml'
+  push:
+    branches:
+      - 'feature/**'
+    paths:
+      - 'apps/operations-dashboard/**'
+      - 'docs/design/OPERATIONS_DASHBOARD.md'
+      - '.github/workflows/dashboard-ci.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dashboard-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dashboard:
+    name: dashboard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.16.0'
+
+      - name: Validate dashboard source and budgets
+        run: npm --prefix apps/operations-dashboard run check
+
+      - name: Run dashboard unit and API contract tests
+        run: npm --prefix apps/operations-dashboard test
+
+      - name: Smoke-test the static dashboard server
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --prefix apps/operations-dashboard run serve > /tmp/dashboard-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 20); do
+            if curl --fail --silent --show-error http://127.0.0.1:4173/ >/tmp/dashboard-index.html; then
+              break
+            fi
+            sleep 1
+          done
+          grep -Fq 'Codestra Crawler Control' /tmp/dashboard-index.html
+          curl --fail --silent --show-error http://127.0.0.1:4173/config.js \
+            | grep -Fq 'writeControlsEnabled: false'
+          curl --fail --silent --show-error --head http://127.0.0.1:4173/app.js \
+            | grep -Eqi '^x-content-type-options:[[:space:]]*nosniff'
