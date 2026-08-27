@@ -36,6 +36,33 @@ jobs:
           tar -tzf /tmp/dashboard-audit.tar.gz
           tar -xzf /tmp/dashboard-audit.tar.gz -C "$GITHUB_WORKSPACE"
           rm -f .github/workflows/export-dashboard-source.yml
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('apps/operations-dashboard/test/browser-interactions.test.mjs')
+          text = path.read_text(encoding='utf-8')
+          old = """    await page.locator('[data-save-settings]').click();
+              await page.locator('#connection-copy').filter({ hasText: 'API ready' }).waitFor();
+
+              await heading(page, 'jobs', 'Crawl jobs');
+              assert.equal(await page.locator('[data-job-row]').count(), 3);
+          """
+          new = """    await page.locator('[data-save-settings]').click();
+              await page.locator('#settings-dialog').waitFor({ state: 'hidden' });
+
+              await heading(page, 'jobs', 'Crawl jobs');
+              await page.locator(`[data-job-row=\"${runningId}\"]`).waitFor();
+              assert.equal((await page.locator('#connection-copy').textContent()).trim(), 'API ready');
+              assert.equal(
+                await page.locator('[data-job-row]').filter({ hasText: 'northstar-logistics.com' }).count(),
+                0,
+              );
+              assert.equal(await page.locator('[data-job-row]').count(), 3);
+          """
+          if old not in text:
+              raise SystemExit('expected browser live-mode assertion block was not found')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+          PY
 
       - name: Install locked dependencies and format audited files
         shell: bash
