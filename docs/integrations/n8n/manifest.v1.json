@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0",
+  "system": "kyqra-crawler",
+  "repository": "appolon1908-hue/scrapper",
+  "base_branch": "hardening/runtime-path-deployment-gates",
+  "branch": "integration/n8n-crawler-automation-v2-20260827",
+  "authority": "crawler-job-and-result-system-of-record",
+  "integration_boundary": "codestra-middleware-only",
+  "n8n": {
+    "role": "orchestration-and-human-review-only",
+    "direct_crawler_api_access": false,
+    "direct_database_access": false,
+    "direct_redis_access": false,
+    "direct_odoo_access": false,
+    "credentials_allowed": false
+  },
+  "events": [
+    "crawler.job.accepted",
+    "crawler.job.started",
+    "crawler.job.completed",
+    "crawler.job.retryable_failed",
+    "crawler.job.failed_terminal",
+    "crawler.result.review_required",
+    "crawler.result.approved",
+    "crawler.result.rejected",
+    "crawler.retention.due",
+    "crawler.privacy_delete.requested"
+  ],
+  "commands": [
+    "crawler.job.request",
+    "crawler.job.cancel",
+    "crawler.job.retry",
+    "crawler.result.create_review",
+    "crawler.result.approve",
+    "crawler.result.reject",
+    "crawler.result.publish_enrichment",
+    "crawler.retention.apply",
+    "crawler.privacy_delete.apply"
+  ],
+  "workflows": [
+    "kyqra.crawler.job-request.v1",
+    "kyqra.crawler.result-received.v1",
+    "kyqra.crawler.human-review.v1",
+    "kyqra.crawler.enrichment-publish.v1",
+    "kyqra.crawler.failure-retry.v1",
+    "kyqra.crawler.retention-cleanup.v1"
+  ],
+  "capabilities": {
+    "CRAWLER_EXECUTION": false,
+    "CRAWLER_WRITEBACK": false,
+    "PRIVACY_WRITE": false,
+    "DEAD_LETTER_REPLAY": false
+  },
+  "invariants": {
+    "signed_callback_required": true,
+    "durable_inbox_before_acknowledgement": true,
+    "tenant_isolation_required": true,
+    "per_company_batch_isolation_required": true,
+    "unknown_job_outcome_reconciled_before_retry": true,
+    "human_review_required_where_configured": true,
+    "workflows_active_in_git": false,
+    "production_changed": false
+  }
+}
