@@ -53,6 +53,8 @@ jobs:
       EIN_FINGERPRINT_PEPPER: release-test-pepper
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -77,13 +79,23 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
       - name: Verify deployment workflows cannot mutate remote hosts automatically
+        shell: bash
         run: |
+          set -euo pipefail
+          ruby scripts/validate-workflow-policy.rb
           shellcheck -S error \
             scripts/runtime-path-inventory.sh \
+            scripts/verify-release-context.sh \
+            scripts/verify-release-image.sh \
             scripts/validate-deployment-scaffolding.sh \
             scripts/deploy-staging.sh \
-            scripts/rollback-staging.sh
+            scripts/rollback-staging.sh \
+            scripts/deploy-production.sh \
+            scripts/rollback-production.sh
           bash scripts/validate-deployment-scaffolding.sh
 
   branch-governance:
@@ -95,13 +107,13 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Require protected release branch
+        shell: bash
         run: |
           set -euo pipefail
           encoded_branch="$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["GITHUB_REF_NAME"], safe=""))')"
           protected="$(gh api "repos/${GITHUB_REPOSITORY}/branches/${encoded_branch}" --jq '.protected')"
           if [[ "$protected" != "true" ]]; then
             echo "Release blocked: $GITHUB_REF_NAME is not protected." >&2
-            echo "Run Configure release branch protection with RELEASE_ADMIN_TOKEN, then rerun." >&2
             exit 1
           fi
 
@@ -112,8 +124,12 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
       - name: Validate Caddy and Kong controls
         run: bash scripts/validate-gateway.sh
+
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
@@ -124,7 +140,7 @@ jobs:
 
   publish:
     name: publish
-    needs: [verify, deployment-policy, branch-governance]
+    needs: [verify, deployment-policy, branch-governance, gateway-validation]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -137,6 +153,8 @@ jobs:
       image: ${{ steps.identity.outputs.reference }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
@@ -163,6 +181,7 @@ jobs:
 
       - name: Record immutable reference
         id: identity
+        shell: bash
         run: echo "reference=${IMAGE_NAME}@${{ steps.build.outputs.digest }}" >> "$GITHUB_OUTPUT"
 
       - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
@@ -187,6 +206,7 @@ jobs:
           exit-code: '1'
 
       - name: Write release identity
+        shell: bash
         run: |
           mkdir -p release-evidence
           cat > release-evidence/image.json <<EOF
@@ -223,6 +243,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 2
+          persist-credentials: false
 
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
@@ -231,6 +252,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Materialize previous source for rollback exercise
+        shell: bash
         run: |
           set -euo pipefail
           previous_sha="$(git rev-parse HEAD^)"
@@ -239,6 +261,7 @@ jobs:
           printf '%s\n' "$previous_sha" > rollback-source/SOURCE_SHA
 
       - name: Deploy immutable image with writes disabled and exercise rollback
+        shell: bash
         run: |
           chmod +x scripts/staging-canary.sh
           scripts/staging-canary.sh '${{ needs.publish.outputs.image }}' rollback-source
