@@ -54,6 +54,18 @@ jobs:
           npm --prefix apps/operations-dashboard run check
           npm --prefix apps/operations-dashboard test
 
+      - name: Export formatted audited source for failure analysis
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: formatted-dashboard-audit-${{ github.sha }}
+          path: |
+            .github/workflows/dashboard-ci.yml
+            apps/operations-dashboard
+            docs/design/OPERATIONS_DASHBOARD.md
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Run required Chromium interaction coverage
         shell: bash
         run: |
