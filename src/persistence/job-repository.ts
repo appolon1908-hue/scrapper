@@ -3,11 +3,7 @@ import type { JobListQuery } from '../domain/schemas.js';
 import { pool, withTransaction } from './db.js';
 import { insertAudit } from './audit-repository.js';
 import { decodeCursor, encodeCursor, requestHash } from './serialization.js';
-import type {
-  CreateJobInput,
-  JobRecord,
-  QueuedJobDispatch,
-} from './types.js';
+import type { CreateJobInput, JobRecord, QueuedJobDispatch } from './types.js';
 
 export class JobRepository {
   async create(input: CreateJobInput): Promise<{ job: JobRecord; duplicate: boolean }> {

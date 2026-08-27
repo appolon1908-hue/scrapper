@@ -2,7 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import { log } from '../log.js';
 import { authenticateRequest } from '../security/auth.js';
 
-const AUTHENTICATED_PREFIX = '/api/v2/';
+const AUTHENTICATED_PREFIXES = ['/api/v2/', '/platform/v2/'] as const;
+const protectedRoute = (url: string) =>
+  AUTHENTICATED_PREFIXES.some((prefix) => url.startsWith(prefix));
 
 export function installApiHooks(app: FastifyInstance): void {
   app.addHook('onRequest', async (request, reply) => {
@@ -13,22 +15,22 @@ export function installApiHooks(app: FastifyInstance): void {
     reply.header('cache-control', 'no-store');
     reply.header('permissions-policy', 'camera=(), microphone=(), geolocation=()');
 
-    if (request.url.startsWith(AUTHENTICATED_PREFIX)) {
+    if (protectedRoute(request.url)) {
       const authenticated = await authenticateRequest(request, reply);
       if (!authenticated) return reply;
     }
   });
 
   app.addHook('onResponse', async (request, reply) => {
-    const protectedRoute = request.url.startsWith(AUTHENTICATED_PREFIX);
+    const authenticatedRoute = protectedRoute(request.url);
     log('info', 'http_request', {
       requestId: request.id,
       method: request.method,
       path: request.routeOptions.url || request.url.split('?')[0],
       statusCode: reply.statusCode,
       responseTimeMs: reply.elapsedTime,
-      tenantId: protectedRoute ? request.principal?.tenantId : undefined,
-      clientId: protectedRoute ? request.principal?.clientId : undefined,
+      tenantId: authenticatedRoute ? request.principal?.tenantId : undefined,
+      clientId: authenticatedRoute ? request.principal?.clientId : undefined,
     });
   });
 }

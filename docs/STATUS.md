@@ -63,17 +63,17 @@ required by the intended release-branch protection policy.
 
 ## Capability truth table
 
-| Capability | Source status | Remote live status |
-|---|---|---|
-| Crawl job API | implemented | not yet proven by release evidence |
-| HTTP/Playwright crawl worker | implemented | not yet proven by release evidence |
-| Recoverable crawl leases | implemented and integration-tested by CI definition | not yet proven remotely |
-| Signed middleware outbox | implemented, disabled by default | not active |
-| Simulated n8n/Odoo replay contract | implemented as deterministic integration test | not a live integration |
-| n8n durable reverse-command inbox | not implemented | not live |
-| Odoo CRM adapter/reconciliation | not implemented | not live |
-| Registry/EIN provider | not implemented | not live |
-| Vue admin console/forms | not implemented | not live |
-| Kong/Caddy validation stack | implemented | remote routing not yet proven |
-| Immutable image release | automated after protection and green gates | pending evidence |
-| Production deployment | guarded workflow implemented | not approved or executed |
+| Capability                         | Source status                                       | Remote live status                 |
+| ---------------------------------- | --------------------------------------------------- | ---------------------------------- |
+| Crawl job API                      | implemented                                         | not yet proven by release evidence |
+| HTTP/Playwright crawl worker       | implemented                                         | not yet proven by release evidence |
+| Recoverable crawl leases           | implemented and integration-tested by CI definition | not yet proven remotely            |
+| Signed middleware outbox           | implemented, disabled by default                    | not active                         |
+| Simulated n8n/Odoo replay contract | implemented as deterministic integration test       | not a live integration             |
+| n8n durable reverse-command inbox  | not implemented                                     | not live                           |
+| Odoo CRM adapter/reconciliation    | not implemented                                     | not live                           |
+| Registry/EIN provider              | not implemented                                     | not live                           |
+| Vue admin console/forms            | not implemented                                     | not live                           |
+| Kong/Caddy validation stack        | implemented                                         | remote routing not yet proven      |
+| Immutable image release            | automated after protection and green gates          | pending evidence                   |
+| Production deployment              | guarded workflow implemented                        | not approved or executed           |

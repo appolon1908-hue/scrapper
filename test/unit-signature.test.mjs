@@ -21,7 +21,10 @@ const input = {
 test('signature canonicalization is deterministic', () => {
   const canonical = canonicalSignatureInput(input);
   assert.match(canonical, /^v2\nPOST\n\/api\/v2\/results\?a=1&z=2\n/);
-  assert.equal(canonicalSignatureInput({ ...input, scopes: [...input.scopes].reverse() }), canonical);
+  assert.equal(
+    canonicalSignatureInput({ ...input, scopes: [...input.scopes].reverse() }),
+    canonical,
+  );
 });
 
 test('signature verification rejects changed payloads', () => {

@@ -5,12 +5,7 @@ import { config } from '../config.js';
 import { runCrawlJob, type CrawlProgress } from '../crawler/run.js';
 import { log } from '../log.js';
 import { Repository } from '../persistence/repository.js';
-import {
-  crawlQueue,
-  enqueueCrawlJob,
-  redisConnection,
-  type CrawlQueuePayload,
-} from '../queues.js';
+import { crawlQueue, enqueueCrawlJob, redisConnection, type CrawlQueuePayload } from '../queues.js';
 
 export async function startCrawlWorker(
   repository = new Repository(),
@@ -34,9 +29,7 @@ export async function startCrawlWorker(
       error: error.message,
     }),
   );
-  worker.on('error', (error) =>
-    log('error', 'crawl_worker_error', { error: error.message }),
-  );
+  worker.on('error', (error) => log('error', 'crawl_worker_error', { error: error.message }));
 
   let stopping = false;
   const reconcile = async (): Promise<void> => {
@@ -48,12 +41,7 @@ export async function startCrawlWorker(
           log('warn', 'expired_crawl_lease_requeued', dispatch);
         }
 
-        const queued = await crawlQueue.getJobs(
-          ['waiting', 'active', 'delayed'],
-          0,
-          500,
-          true,
-        );
+        const queued = await crawlQueue.getJobs(['waiting', 'active', 'delayed'], 0, 500, true);
         const queueDispatches = new Set(
           queued.map((job) => `${job.data.jobId}:${job.data.dispatchVersion}`),
         );

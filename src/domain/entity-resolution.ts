@@ -56,11 +56,16 @@ export function resolveBusinessRecord(
   if (!extractions.length) throw new Error('business_resolution_requires_pages');
   const allNames = extractions.flatMap((page) => page.names);
   const legalName = best(allNames.filter((name) => name.legal))?.value || null;
-  const displayName = legalName || best(allNames)?.value || new URL(extractions[0]!.sourceUrl).hostname;
+  const displayName =
+    legalName || best(allNames)?.value || new URL(extractions[0]!.sourceUrl).hostname;
   const website = new URL(extractions[0]!.sourceUrl).origin;
   const domain = new URL(website).hostname.toLowerCase().replace(/^www\./, '');
-  const emails = [...new Set(extractions.flatMap((page) => page.emails.map((value) => value.value)))];
-  const phones = [...new Set(extractions.flatMap((page) => page.phones.map((value) => value.value)))];
+  const emails = [
+    ...new Set(extractions.flatMap((page) => page.emails.map((value) => value.value))),
+  ];
+  const phones = [
+    ...new Set(extractions.flatMap((page) => page.phones.map((value) => value.value))),
+  ];
   const addresses = [
     ...new Set(extractions.flatMap((page) => page.addresses.map((value) => value.value))),
   ];
@@ -122,7 +127,10 @@ export function resolveBusinessRecord(
   };
 }
 
-export function mergeBusinessRecords(current: BusinessRecord, incoming: BusinessRecord): BusinessRecord {
+export function mergeBusinessRecords(
+  current: BusinessRecord,
+  incoming: BusinessRecord,
+): BusinessRecord {
   const merge = (a: string[], b: string[], max: number) => [...new Set([...a, ...b])].slice(0, max);
   const evidence: Record<string, Evidence[]> = { ...current.evidence };
   for (const [field, values] of Object.entries(incoming.evidence)) {
@@ -131,7 +139,8 @@ export function mergeBusinessRecords(current: BusinessRecord, incoming: Business
   return {
     ...current,
     legalName: current.legalName || incoming.legalName,
-    displayName: incoming.confidence > current.confidence ? incoming.displayName : current.displayName,
+    displayName:
+      incoming.confidence > current.confidence ? incoming.displayName : current.displayName,
     description: current.description || incoming.description,
     emails: merge(current.emails, incoming.emails, 50),
     phones: merge(current.phones, incoming.phones, 50),

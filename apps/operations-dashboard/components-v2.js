@@ -55,10 +55,21 @@ function replaceOverviewControls(markup, state) {
         `<button class="${state.throughputRange === value ? 'is-active' : ''}" type="button" data-throughput-range="${value}" aria-pressed="${state.throughputRange === value}">${label}</button>`,
     )
     .join('')}</div>`;
-  const axisLabel = state.throughputRange === '7d' ? '7 days ago' : state.throughputRange === '24h' ? '24 hours ago' : '12 hours ago';
+  const axisLabel =
+    state.throughputRange === '7d'
+      ? '7 days ago'
+      : state.throughputRange === '24h'
+        ? '24 hours ago'
+        : '12 hours ago';
   return markup
-    .replace(/<div class="segmented-control" aria-label="Throughput range">[\s\S]*?<\/div>/, controls)
-    .replace('<div class="chart-axis"><span>12 hours ago</span><span>Now</span></div>', `<div class="chart-axis"><span>${axisLabel}</span><span>Now</span></div>`);
+    .replace(
+      /<div class="segmented-control" aria-label="Throughput range">[\s\S]*?<\/div>/,
+      controls,
+    )
+    .replace(
+      '<div class="chart-axis"><span>12 hours ago</span><span>Now</span></div>',
+      `<div class="chart-axis"><span>${axisLabel}</span><span>Now</span></div>`,
+    );
 }
 
 export function renderOverview(state) {
@@ -77,7 +88,10 @@ function jobFilterOptions(selected) {
     ['cancel_requested', 'Cancelling'],
     ['cancelled', 'Cancelled'],
   ]
-    .map(([value, label]) => `<option value="${value}"${selected === value ? ' selected' : ''}>${label}</option>`)
+    .map(
+      ([value, label]) =>
+        `<option value="${value}"${selected === value ? ' selected' : ''}>${label}</option>`,
+    )
     .join('');
 }
 
@@ -88,7 +102,10 @@ function jobSortOptions(selected) {
     ['created-asc', 'Oldest created'],
     ['status', 'Status'],
   ]
-    .map(([value, label]) => `<option value="${value}"${selected === value ? ' selected' : ''}>${label}</option>`)
+    .map(
+      ([value, label]) =>
+        `<option value="${value}"${selected === value ? ' selected' : ''}>${label}</option>`,
+    )
     .join('');
 }
 
@@ -111,7 +128,9 @@ function jobRows(jobs) {
 
 export function renderJobs(state) {
   const jobs = filterJobs(state.jobs, state.jobFilters);
-  const filtersActive = Boolean(state.jobFilters.search || state.jobFilters.status || state.jobFilters.sort !== 'updated-desc');
+  const filtersActive = Boolean(
+    state.jobFilters.search || state.jobFilters.status || state.jobFilters.sort !== 'updated-desc',
+  );
   return `<section class="view-stack" aria-labelledby="jobs-heading">
     <div class="page-heading"><div><p class="eyebrow">Workload manager</p><h1 id="jobs-heading">Crawl jobs</h1><p>Search, filter, sort, inspect, cancel, and retry tenant-scoped workloads.</p></div><a class="button button--primary" href="#/new-crawl">${icon('plus', 17)} New crawl</a></div>
     ${stateBanner(state, 'jobs', 'jobs')}
@@ -130,13 +149,24 @@ export function renderJobs(state) {
 }
 
 function importPreview(preview) {
-  if (!preview) return '<div class="import-empty"><strong>No file selected</strong><span>CSV headers may use website, url, seed_url, domain, or homepage. JSON may contain an array or companies/targets/records/items.</span></div>';
+  if (!preview)
+    return '<div class="import-empty"><strong>No file selected</strong><span>CSV headers may use website, url, seed_url, domain, or homepage. JSON may contain an array or companies/targets/records/items.</span></div>';
   const invalid = preview.invalid || [];
   return `<div class="import-preview" role="status">
     <div class="import-preview__summary"><div><strong>${escapeHtml(preview.fileName || 'Imported file')}</strong><span>${preview.urls.length} valid websites · ${preview.duplicates} duplicates · ${invalid.length} invalid rows</span></div>${badge(invalid.length ? 'Review needed' : 'Ready', invalid.length ? 'warning' : 'success')}</div>
-    <ol>${preview.urls.slice(0, 5).map((url) => `<li>${icon('globe', 14)}<span>${escapeHtml(url)}</span></li>`).join('')}</ol>
+    <ol>${preview.urls
+      .slice(0, 5)
+      .map((url) => `<li>${icon('globe', 14)}<span>${escapeHtml(url)}</span></li>`)
+      .join('')}</ol>
     ${preview.urls.length > 5 ? `<small>Plus ${preview.urls.length - 5} more valid websites.</small>` : ''}
-    ${invalid.length ? `<details><summary>Show invalid rows</summary><ul>${invalid.slice(0, 20).map((item) => `<li>Row ${escapeHtml(item.row)}: ${escapeHtml(item.error)}</li>`).join('')}</ul></details>` : ''}
+    ${
+      invalid.length
+        ? `<details><summary>Show invalid rows</summary><ul>${invalid
+            .slice(0, 20)
+            .map((item) => `<li>Row ${escapeHtml(item.row)}: ${escapeHtml(item.error)}</li>`)
+            .join('')}</ul></details>`
+        : ''
+    }
     <div class="inline-actions"><button class="button button--secondary" type="button" data-apply-import>Apply to target list</button><button class="text-link" type="button" data-clear-import>Clear import</button></div>
   </div>`;
 }
@@ -198,7 +228,14 @@ function resultRows(items) {
       const categories = record.categories || [];
       const emails = record.emails || [];
       const phones = record.phones || [];
-      return `<tr><td><button class="job-link" type="button" data-open-result="${escapeHtml(item.id)}"><span class="job-link__title">${escapeHtml(record.displayName || record.legalName || 'Unnamed business')}</span><span class="job-link__id">${escapeHtml(record.domain || shortId(item.id))}</span></button></td><td><div class="confidence"><span style="--confidence:${confidence}%"></span><strong>${confidence}%</strong></div></td><td>${categories.length ? categories.slice(0, 3).map((value) => badge(value, 'neutral')).join(' ') : '<span class="muted">Unclassified</span>'}</td><td>${escapeHtml(emails[0] || phones[0] || 'No contact')}</td><td><time datetime="${escapeHtml(record.lastSeenAt || '')}">${escapeHtml(formatRelativeTime(record.lastSeenAt))}</time></td><td><button class="icon-button icon-button--quiet" type="button" data-open-result="${escapeHtml(item.id)}" aria-label="Open ${escapeHtml(record.displayName || record.domain || 'result')}">${icon('chevron', 18)}</button></td></tr>`;
+      return `<tr><td><button class="job-link" type="button" data-open-result="${escapeHtml(item.id)}"><span class="job-link__title">${escapeHtml(record.displayName || record.legalName || 'Unnamed business')}</span><span class="job-link__id">${escapeHtml(record.domain || shortId(item.id))}</span></button></td><td><div class="confidence"><span style="--confidence:${confidence}%"></span><strong>${confidence}%</strong></div></td><td>${
+        categories.length
+          ? categories
+              .slice(0, 3)
+              .map((value) => badge(value, 'neutral'))
+              .join(' ')
+          : '<span class="muted">Unclassified</span>'
+      }</td><td>${escapeHtml(emails[0] || phones[0] || 'No contact')}</td><td><time datetime="${escapeHtml(record.lastSeenAt || '')}">${escapeHtml(formatRelativeTime(record.lastSeenAt))}</time></td><td><button class="icon-button icon-button--quiet" type="button" data-open-result="${escapeHtml(item.id)}" aria-label="Open ${escapeHtml(record.displayName || record.domain || 'result')}">${icon('chevron', 18)}</button></td></tr>`;
     })
     .join('');
 }
@@ -211,20 +248,34 @@ function confidenceOptions(selected) {
     [0.85, '85% and higher'],
     [0.95, '95% and higher'],
   ]
-    .map(([value, label]) => `<option value="${value}"${Number(selected) === value ? ' selected' : ''}>${label}</option>`)
+    .map(
+      ([value, label]) =>
+        `<option value="${value}"${Number(selected) === value ? ' selected' : ''}>${label}</option>`,
+    )
     .join('');
 }
 
 export function renderResults(state) {
-  const selectedJob = state.selectedResultJobId || state.jobs.find((job) => job.status === 'completed')?.id || '';
+  const selectedJob =
+    state.selectedResultJobId || state.jobs.find((job) => job.status === 'completed')?.id || '';
   const resultJob = state.jobs.find((job) => job.id === selectedJob);
   const visible = filterResults(state.results, state.resultFilters);
-  const filtersActive = Boolean(state.resultFilters.search || Number(state.resultFilters.minConfidence) > 0 || state.resultFilters.contact !== 'any');
+  const filtersActive = Boolean(
+    state.resultFilters.search ||
+      Number(state.resultFilters.minConfidence) > 0 ||
+      state.resultFilters.contact !== 'any',
+  );
   return `<section class="view-stack" aria-labelledby="results-heading">
     <div class="page-heading"><div><p class="eyebrow">Resolved entities</p><h1 id="results-heading">Business results</h1><p>Search and filter the currently loaded result page, inspect evidence, and export only the visible view.</p></div><div class="page-heading__actions"><button class="button button--secondary" type="button" data-export-results="csv"${visible.length ? '' : ' disabled'}>${icon('download', 17)} CSV</button><button class="button button--secondary" type="button" data-export-results="json"${visible.length ? '' : ' disabled'}>${icon('download', 17)} JSON</button></div></div>
     ${stateBanner(state, 'results', 'results')}
     <div class="toolbar toolbar--wrap">
-      <label class="select-field select-field--wide"><span class="sr-only">Select completed job</span><select data-result-job>${state.jobs.filter((job) => job.status === 'completed' || job.id === selectedJob).map((job) => `<option value="${escapeHtml(job.id)}"${job.id === selectedJob ? ' selected' : ''}>${escapeHtml(getJobTitle(job))} · ${escapeHtml(shortId(job.id))}</option>`).join('')}</select></label>
+      <label class="select-field select-field--wide"><span class="sr-only">Select completed job</span><select data-result-job>${state.jobs
+        .filter((job) => job.status === 'completed' || job.id === selectedJob)
+        .map(
+          (job) =>
+            `<option value="${escapeHtml(job.id)}"${job.id === selectedJob ? ' selected' : ''}>${escapeHtml(getJobTitle(job))} · ${escapeHtml(shortId(job.id))}</option>`,
+        )
+        .join('')}</select></label>
       <label class="search-field"><span class="sr-only">Search results</span>${icon('search', 17)}<input type="search" placeholder="Search business, domain or contact" value="${escapeHtml(state.resultFilters.search)}" data-result-search /></label>
       <label class="select-field"><span class="sr-only">Minimum confidence</span><select data-result-confidence>${confidenceOptions(state.resultFilters.minConfidence)}</select></label>
       <label class="select-field"><span class="sr-only">Contact filter</span><select data-result-contact><option value="any"${state.resultFilters.contact === 'any' ? ' selected' : ''}>Any contact state</option><option value="email"${state.resultFilters.contact === 'email' ? ' selected' : ''}>Has email</option><option value="phone"${state.resultFilters.contact === 'phone' ? ' selected' : ''}>Has phone</option><option value="missing"${state.resultFilters.contact === 'missing' ? ' selected' : ''}>No email or phone</option></select></label>
@@ -239,7 +290,8 @@ export function renderResults(state) {
 
 function diagnosticCards(state) {
   const diagnostics = state.diagnostics || [];
-  if (!diagnostics.length) return '<div class="empty-state empty-state--compact"><strong>No diagnostic run yet</strong><span>Read-only checks never create, cancel, or retry jobs.</span></div>';
+  if (!diagnostics.length)
+    return '<div class="empty-state empty-state--compact"><strong>No diagnostic run yet</strong><span>Read-only checks never create, cancel, or retry jobs.</span></div>';
   return `<div class="diagnostic-grid">${diagnostics.map((item) => `<article class="diagnostic-card"><div><strong>${escapeHtml(item.label)}</strong>${badge(item.status, item.status === 'pass' ? 'success' : item.status === 'skipped' ? 'muted' : 'danger')}</div><span>${escapeHtml(item.detail || '')}</span><small>${item.durationMs == null ? 'Not requested' : `${escapeHtml(item.durationMs)} ms`}</small></article>`).join('')}</div>`;
 }
 
@@ -247,7 +299,9 @@ export function renderIntegrations(state) {
   const base = renderBaseIntegrations(state);
   const panel = `<article class="panel diagnostics-panel"><div class="panel__header"><div><p class="eyebrow">Read-only API validation</p><h2>Documented endpoint checks</h2><p class="panel__description">Service info, health, readiness, OpenAPI, capabilities, stats, metrics, jobs, and selected-job results are checked without mutating state.</p></div><button class="button button--secondary" type="button" data-run-diagnostics${state.dataStates?.diagnostics === 'loading' ? ' disabled' : ''}>${icon('refresh', 17)} ${state.dataStates?.diagnostics === 'loading' ? 'Checking…' : 'Run read-only checks'}</button></div>${stateBanner(state, 'diagnostics', 'API diagnostics')}${diagnosticCards(state)}<div class="contract-note"><strong>Mutation aliases are not auto-probed</strong><span>POST /api/v2/jobs, /commands/crawl, cancellation, and retry endpoints are exercised only through explicit operator actions with confirmation, correlation, and idempotency headers.</span></div></article>`;
   const position = base.lastIndexOf('</section>');
-  return position < 0 ? `${base}${panel}` : `${base.slice(0, position)}${panel}${base.slice(position)}`;
+  return position < 0
+    ? `${base}${panel}`
+    : `${base.slice(0, position)}${panel}${base.slice(position)}`;
 }
 
 export const renderReviews = renderBaseReviews;
@@ -259,7 +313,8 @@ function progressValue(progress, camel, snake) {
 }
 
 function renderJobDrawer(job, state) {
-  if (!job) return '<div class="drawer__body"><div class="empty-state"><strong>Job is unavailable</strong><span>Refresh the job list and try again.</span></div></div>';
+  if (!job)
+    return '<div class="drawer__body"><div class="empty-state"><strong>Job is unavailable</strong><span>Refresh the job list and try again.</span></div></div>';
   const percent = progressPercent(job);
   const canCancel = ['queued', 'running'].includes(job.status);
   const canRetry = ['failed', 'cancelled'].includes(job.status);
@@ -277,9 +332,12 @@ function renderJobDrawer(job, state) {
 }
 
 function renderResultDrawer(item, state) {
-  if (!item) return '<div class="drawer__body"><div class="empty-state"><strong>Result is unavailable</strong><span>Reload the selected result page and try again.</span></div></div>';
+  if (!item)
+    return '<div class="drawer__body"><div class="empty-state"><strong>Result is unavailable</strong><span>Reload the selected result page and try again.</span></div></div>';
   const record = item.record || {};
-  const evidence = Object.entries(record.evidence || {}).flatMap(([field, entries]) => (entries || []).map((entry) => ({ field, ...entry }))).slice(0, 25);
+  const evidence = Object.entries(record.evidence || {})
+    .flatMap(([field, entries]) => (entries || []).map((entry) => ({ field, ...entry })))
+    .slice(0, 25);
   const contactRows = [
     ['Emails', record.emails || []],
     ['Phones', record.phones || []],
@@ -297,8 +355,15 @@ function renderResultDrawer(item, state) {
 
 export function renderDrawer(state) {
   if (!state.drawer) return '';
-  if (state.drawer.type === 'result') return renderResultDrawer(state.results.find((item) => item.id === state.drawer.id), state);
-  return renderJobDrawer(state.jobs.find((job) => job.id === state.drawer.id), state);
+  if (state.drawer.type === 'result')
+    return renderResultDrawer(
+      state.results.find((item) => item.id === state.drawer.id),
+      state,
+    );
+  return renderJobDrawer(
+    state.jobs.find((job) => job.id === state.drawer.id),
+    state,
+  );
 }
 
 export function renderRoute(route, state) {

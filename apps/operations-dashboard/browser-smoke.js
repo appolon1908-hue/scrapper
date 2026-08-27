@@ -81,14 +81,20 @@ export async function runBrowserSmoke() {
     setValue(statusSelect, 'failed', 'change');
     await wait(30);
     assert(rowCount() === 1, 'job status filter works');
-    assert(document.querySelector('[data-job-row]')?.textContent.includes('Failed'), 'failed row rendered');
+    assert(
+      document.querySelector('[data-job-row]')?.textContent.includes('Failed'),
+      'failed row rendered',
+    );
 
     click('[data-open-job]', 'open job drawer');
     await waitFor(
       () => document.querySelector('#job-drawer')?.getAttribute('aria-hidden') === 'false',
       'job drawer',
     );
-    assert(document.querySelector('#job-drawer')?.textContent.includes('Seed targets'), 'job drawer details render');
+    assert(
+      document.querySelector('#job-drawer')?.textContent.includes('Seed targets'),
+      'job drawer details render',
+    );
     click('[data-close-drawer]', 'close job drawer');
     await waitFor(
       () => document.querySelector('#job-drawer')?.getAttribute('aria-hidden') === 'true',
@@ -172,7 +178,10 @@ export async function runBrowserSmoke() {
       () => document.querySelector('#job-drawer')?.getAttribute('aria-hidden') === 'false',
       'result drawer',
     );
-    assert(document.querySelector('#job-drawer')?.textContent.includes('Evidence'), 'result drawer renders evidence state');
+    assert(
+      document.querySelector('#job-drawer')?.textContent.includes('Evidence'),
+      'result drawer renders evidence state',
+    );
     click('[data-close-drawer]', 'close result drawer');
 
     click('[data-clear-result-filters]', 'clear result filters again');

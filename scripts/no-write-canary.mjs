@@ -7,9 +7,7 @@ const seedUrl = String(process.env.CANARY_SEED_URL || 'https://example.com');
 const timeoutSeconds = Number(process.env.CANARY_TIMEOUT_SECONDS || 240);
 
 if (!baseUrl || !token || !tenantId) {
-  throw new Error(
-    'CANARY_API_BASE, CANARY_TOKEN and CANARY_TENANT_ID are required',
-  );
+  throw new Error('CANARY_API_BASE, CANARY_TOKEN and CANARY_TENANT_ID are required');
 }
 
 const headers = {

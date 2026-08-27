@@ -33,9 +33,7 @@ export async function registerOperationsRoutes(
         ([status, value]) => `scrapper_queue_jobs{status="${status}"} ${value}`,
       ),
     ];
-    return reply
-      .type('text/plain; version=0.0.4')
-      .send(`${lines.join('\n')}\n`);
+    return reply.type('text/plain; version=0.0.4').send(`${lines.join('\n')}\n`);
   });
 
   app.get('/api/v2/capabilities', async (request, reply) => {
@@ -65,6 +63,19 @@ export async function registerOperationsRoutes(
       runtime_paths_verified: false,
       production_deployed: false,
       dashboard_source_available: true,
+      control_plane_api: true,
+      tenant_onboarding: true,
+      source_catalog: true,
+      schedules: true,
+      business_search: true,
+      integration_inventory: true,
+      review_queue: true,
+      delivery_operations: true,
+      audit_ledger: true,
+      review_mutations: config.reviewMutationsEnabled,
+      schedule_execution: config.scheduleExecutionEnabled,
+      delivery_replay: config.outboxReplayEnabled,
+      server_exports: config.exportProcessingEnabled,
 
       external_delivery_enabled: externalDelivery,
       registry_enrichment_enabled: registryEnrichment,
@@ -72,7 +83,7 @@ export async function registerOperationsRoutes(
       durable_inbound_commands: false,
       direct_odoo_delivery_enabled: false,
       search_discovery_enabled: false,
-      admin_console_available: false,
+      admin_console_available: true,
       production_deployment_verified: false,
       ein_storage: 'masked_and_keyed_fingerprint_only',
     };

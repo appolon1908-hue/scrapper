@@ -35,7 +35,10 @@ function requestSignal(externalSignal, timeoutMs) {
   const abort = () => controller.abort(externalSignal?.reason);
   if (externalSignal?.aborted) abort();
   else externalSignal?.addEventListener('abort', abort, { once: true });
-  const timer = setTimeout(() => controller.abort(new DOMException('Request timed out', 'TimeoutError')), timeoutMs);
+  const timer = setTimeout(
+    () => controller.abort(new DOMException('Request timed out', 'TimeoutError')),
+    timeoutMs,
+  );
   return {
     signal: controller.signal,
     cleanup() {
@@ -116,9 +119,16 @@ export class DashboardApiClient {
       });
     } catch (error) {
       const timedOut = deadline.signal.aborted && !options.signal?.aborted;
-      throw new ApiError(timedOut ? 'Request timed out' : error instanceof Error ? error.message : 'Network request failed', {
-        code: timedOut ? 'request_timeout' : 'network_error',
-      });
+      throw new ApiError(
+        timedOut
+          ? 'Request timed out'
+          : error instanceof Error
+            ? error.message
+            : 'Network request failed',
+        {
+          code: timedOut ? 'request_timeout' : 'network_error',
+        },
+      );
     } finally {
       deadline.cleanup();
     }
@@ -126,12 +136,15 @@ export class DashboardApiClient {
     const payload = await parseResponse(response);
     if (!response.ok) {
       const errorPayload = typeof payload === 'object' && payload ? payload : {};
-      throw new ApiError(errorPayload.error || errorPayload.message || `Request failed with ${response.status}`, {
-        status: response.status,
-        code: errorPayload.error || 'request_failed',
-        requestId: errorPayload.request_id || response.headers.get('x-request-id'),
-        details: errorPayload.details ?? payload,
-      });
+      throw new ApiError(
+        errorPayload.error || errorPayload.message || `Request failed with ${response.status}`,
+        {
+          status: response.status,
+          code: errorPayload.error || 'request_failed',
+          requestId: errorPayload.request_id || response.headers.get('x-request-id'),
+          details: errorPayload.details ?? payload,
+        },
+      );
     }
     return payload;
   }
@@ -149,7 +162,10 @@ export class DashboardApiClient {
   }
 
   openApiDocument(options = {}) {
-    return this.request('/openapi.yaml', { ...options, accept: 'application/yaml, text/yaml, text/plain' });
+    return this.request('/openapi.yaml', {
+      ...options,
+      accept: 'application/yaml, text/yaml, text/plain',
+    });
   }
 
   capabilities(options) {
@@ -200,7 +216,11 @@ export class DashboardApiClient {
   }
 
   cancelJobCommand(id, command = {}, options = {}) {
-    return this.jobCommand(`/api/v2/commands/jobs/${encodeURIComponent(id)}/cancel`, command, options);
+    return this.jobCommand(
+      `/api/v2/commands/jobs/${encodeURIComponent(id)}/cancel`,
+      command,
+      options,
+    );
   }
 
   retryJob(id, command = {}, options = {}) {
@@ -208,7 +228,11 @@ export class DashboardApiClient {
   }
 
   retryJobCommand(id, command = {}, options = {}) {
-    return this.jobCommand(`/api/v2/commands/jobs/${encodeURIComponent(id)}/retry`, command, options);
+    return this.jobCommand(
+      `/api/v2/commands/jobs/${encodeURIComponent(id)}/retry`,
+      command,
+      options,
+    );
   }
 
   jobCommand(path, command, options) {
@@ -223,6 +247,9 @@ export class DashboardApiClient {
   }
 
   listResults(id, query = {}, options = {}) {
-    return this.request(`/api/v2/jobs/${encodeURIComponent(id)}/results${encodeQuery(query)}`, options);
+    return this.request(
+      `/api/v2/jobs/${encodeURIComponent(id)}/results${encodeQuery(query)}`,
+      options,
+    );
   }
 }

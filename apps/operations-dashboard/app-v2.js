@@ -266,7 +266,11 @@ function scheduleAutoRefresh(state) {
 }
 
 function demoThroughput(range) {
-  if (range === '24h') return [18, 21, 24, 31, 28, 42, 48, 51, 47, 63, 59, 74, 81, 77, 84, 80, 92, 88, 103, 99, 112, 118, 121, 126];
+  if (range === '24h')
+    return [
+      18, 21, 24, 31, 28, 42, 48, 51, 47, 63, 59, 74, 81, 77, 84, 80, 92, 88, 103, 99, 112, 118,
+      121, 126,
+    ];
   if (range === '7d') return [402, 438, 511, 489, 573, 621, 684];
   return [24, 31, 28, 42, 48, 51, 47, 63, 59, 74, 81, 77];
 }
@@ -343,9 +347,7 @@ async function refreshDashboard({ quiet = false } = {}) {
       ...previous,
       serviceInfo: serviceInfo.status === 'fulfilled' ? serviceInfo.value : previous.serviceInfo,
       health:
-        health.status === 'fulfilled'
-          ? normalizeHealthStatus(health.value, 'health')
-          : 'unknown',
+        health.status === 'fulfilled' ? normalizeHealthStatus(health.value, 'health') : 'unknown',
       readiness:
         readiness.status === 'fulfilled'
           ? normalizeHealthStatus(readiness.value, 'readiness')
@@ -356,7 +358,8 @@ async function refreshDashboard({ quiet = false } = {}) {
           ? normalizeStats(stats.value, nextJobs)
           : normalizeStats(previous.stats, nextJobs),
       jobs: nextJobs,
-      nextJobCursor: jobs.status === 'fulfilled' ? jobs.value.next_cursor || null : previous.nextJobCursor,
+      nextJobCursor:
+        jobs.status === 'fulfilled' ? jobs.value.next_cursor || null : previous.nextJobCursor,
       drawer: drawerStillExists ? previous.drawer : null,
       lastUpdated: new Date().toISOString(),
       dataStates: {
@@ -439,14 +442,11 @@ async function loadResults(jobId, { append = false, quiet = false } = {}) {
 
   try {
     const current = store.getState();
-    const page = await api.listResults(
-      jobId,
-      {
-        limit: 250,
-        minConfidence: 0,
-        cursor: append ? current.nextResultCursor : undefined,
-      },
-    );
+    const page = await api.listResults(jobId, {
+      limit: 250,
+      minConfidence: 0,
+      cursor: append ? current.nextResultCursor : undefined,
+    });
     store.setState((previous) => ({
       ...previous,
       selectedResultJobId: jobId,
@@ -701,7 +701,11 @@ function exportResults(format) {
   }
   const filePart = safeFilePart(state.selectedResultJobId || 'view');
   if (format === 'csv') {
-    downloadBlob(resultsToCsv(visible), 'text/csv;charset=utf-8', `codestra-results-${filePart}.csv`);
+    downloadBlob(
+      resultsToCsv(visible),
+      'text/csv;charset=utf-8',
+      `codestra-results-${filePart}.csv`,
+    );
   } else {
     const payload = {
       exported_at: new Date().toISOString(),
@@ -709,12 +713,21 @@ function exportResults(format) {
       tenant_id: state.connection.tenantId || null,
       job_id: state.selectedResultJobId,
       record_count: visible.length,
-      notice: 'This browser export may contain business contact information. Apply approved handling policy.',
+      notice:
+        'This browser export may contain business contact information. Apply approved handling policy.',
       records: visible,
     };
-    downloadBlob(`${JSON.stringify(payload, null, 2)}\n`, 'application/json', `codestra-results-${filePart}.json`);
+    downloadBlob(
+      `${JSON.stringify(payload, null, 2)}\n`,
+      'application/json',
+      `codestra-results-${filePart}.json`,
+    );
   }
-  appendAudit('Browser export created', `${visible.length} visible records · ${format.toUpperCase()}`, 'warning');
+  appendAudit(
+    'Browser export created',
+    `${visible.length} visible records · ${format.toUpperCase()}`,
+    'warning',
+  );
   toast(`${visible.length} visible results exported to ${format.toUpperCase()}`, 'success');
 }
 
@@ -730,7 +743,10 @@ async function parseImportFile(file) {
     const format = extension === 'json' || file.type.includes('json') ? 'json' : 'csv';
     const preview = parseImportText(await file.text(), {
       format,
-      maxCompanies: Math.min(500, Number(store.getState().capabilities.max_companies_per_job || 500)),
+      maxCompanies: Math.min(
+        500,
+        Number(store.getState().capabilities.max_companies_per_job || 500),
+      ),
     });
     store.setState((state) => ({
       ...state,
@@ -788,7 +804,10 @@ async function copyText(value) {
     input.select();
     const copied = document.execCommand?.('copy');
     input.remove();
-    toast(copied ? 'Copied to clipboard' : 'Clipboard access is unavailable', copied ? 'success' : 'warning');
+    toast(
+      copied ? 'Copied to clipboard' : 'Clipboard access is unavailable',
+      copied ? 'success' : 'warning',
+    );
   }
 }
 
@@ -804,11 +823,18 @@ async function runDiagnostic(label, callback, validate = () => true) {
     return diagnosticResult(
       label,
       valid ? 'pass' : 'fail',
-      valid ? 'Response matched the documented contract.' : 'Response did not match the documented contract.',
+      valid
+        ? 'Response matched the documented contract.'
+        : 'Response did not match the documented contract.',
       Math.round(performance.now() - started),
     );
   } catch (error) {
-    return diagnosticResult(label, 'fail', errorMessage(error), Math.round(performance.now() - started));
+    return diagnosticResult(
+      label,
+      'fail',
+      errorMessage(error),
+      Math.round(performance.now() - started),
+    );
   }
 }
 
@@ -830,7 +856,9 @@ async function runDiagnostics() {
     ];
     store.setState((previous) => ({
       ...previous,
-      diagnostics: labels.map((label) => diagnosticResult(label, 'skipped', 'Design preview does not call a live API.')),
+      diagnostics: labels.map((label) =>
+        diagnosticResult(label, 'skipped', 'Design preview does not call a live API.'),
+      ),
       dataStates: { ...previous.dataStates, diagnostics: 'ready' },
       errors: { ...previous.errors, diagnostics: null },
     }));
@@ -841,25 +869,77 @@ async function runDiagnostics() {
   const selectedJob =
     state.jobs.find((job) => job.id === state.selectedResultJobId) || state.jobs[0] || null;
   const checks = [
-    runDiagnostic('GET /', () => api.serviceInfo(), (value) => Boolean(value?.service && value?.api)),
-    runDiagnostic('GET /healthz', () => api.health(), (value) => normalizeHealthStatus(value) === 'healthy'),
-    runDiagnostic('GET /readyz', () => api.readiness(), (value) => normalizeHealthStatus(value, 'readiness') === 'ready'),
-    runDiagnostic('GET /openapi.yaml', () => api.openApiDocument(), (value) => typeof value === 'string' && /openapi:\s*3\.1\.0/.test(value)),
-    runDiagnostic('GET /api/v2/capabilities', () => api.capabilities(), (value) => Boolean(value && typeof value === 'object')),
-    runDiagnostic('GET /api/v2/stats', () => api.stats(), (value) => Boolean(value && typeof value === 'object')),
-    runDiagnostic('GET /api/v2/metrics', () => api.metrics(), (value) => typeof value === 'string' && value.includes('# TYPE')),
-    runDiagnostic('GET /api/v2/jobs', () => api.listJobs({ limit: 1 }), (value) => Array.isArray(value?.items)),
+    runDiagnostic(
+      'GET /',
+      () => api.serviceInfo(),
+      (value) => Boolean(value?.service && value?.api),
+    ),
+    runDiagnostic(
+      'GET /healthz',
+      () => api.health(),
+      (value) => normalizeHealthStatus(value) === 'healthy',
+    ),
+    runDiagnostic(
+      'GET /readyz',
+      () => api.readiness(),
+      (value) => normalizeHealthStatus(value, 'readiness') === 'ready',
+    ),
+    runDiagnostic(
+      'GET /openapi.yaml',
+      () => api.openApiDocument(),
+      (value) => typeof value === 'string' && /openapi:\s*3\.1\.0/.test(value),
+    ),
+    runDiagnostic(
+      'GET /api/v2/capabilities',
+      () => api.capabilities(),
+      (value) => Boolean(value && typeof value === 'object'),
+    ),
+    runDiagnostic(
+      'GET /api/v2/stats',
+      () => api.stats(),
+      (value) => Boolean(value && typeof value === 'object'),
+    ),
+    runDiagnostic(
+      'GET /api/v2/metrics',
+      () => api.metrics(),
+      (value) => typeof value === 'string' && value.includes('# TYPE'),
+    ),
+    runDiagnostic(
+      'GET /api/v2/jobs',
+      () => api.listJobs({ limit: 1 }),
+      (value) => Array.isArray(value?.items),
+    ),
   ];
   if (selectedJob) {
     checks.push(
-      runDiagnostic('GET /api/v2/jobs/{id}', () => api.getJob(selectedJob.id), (value) => value?.id === selectedJob.id),
+      runDiagnostic(
+        'GET /api/v2/jobs/{id}',
+        () => api.getJob(selectedJob.id),
+        (value) => value?.id === selectedJob.id,
+      ),
     );
     checks.push(
-      runDiagnostic('GET /api/v2/jobs/{id}/results', () => api.listResults(selectedJob.id, { limit: 1 }), (value) => Array.isArray(value?.items)),
+      runDiagnostic(
+        'GET /api/v2/jobs/{id}/results',
+        () => api.listResults(selectedJob.id, { limit: 1 }),
+        (value) => Array.isArray(value?.items),
+      ),
     );
   } else {
-    checks.push(Promise.resolve(diagnosticResult('GET /api/v2/jobs/{id}', 'skipped', 'No job is available to inspect.')));
-    checks.push(Promise.resolve(diagnosticResult('GET /api/v2/jobs/{id}/results', 'skipped', 'No job is available to inspect.')));
+    checks.push(
+      Promise.resolve(
+        diagnosticResult('GET /api/v2/jobs/{id}', 'skipped', 'No job is available to inspect.'),
+      ),
+    );
+    checks.push(
+      Promise.resolve(
+        diagnosticResult(
+          'GET /api/v2/jobs/{id}/results',
+          'skipped',
+          'No job is available to inspect.',
+        ),
+      ),
+    );
   }
   const diagnostics = await Promise.all(checks);
   const failures = diagnostics.filter((item) => item.status === 'fail');
@@ -867,10 +947,22 @@ async function runDiagnostics() {
     ...previous,
     diagnostics,
     dataStates: { ...previous.dataStates, diagnostics: failures.length ? 'error' : 'ready' },
-    errors: { ...previous.errors, diagnostics: failures.length ? `${failures.length} read-only check(s) failed.` : null },
+    errors: {
+      ...previous.errors,
+      diagnostics: failures.length ? `${failures.length} read-only check(s) failed.` : null,
+    },
   }));
-  appendAudit('API diagnostics completed', `${diagnostics.length - failures.length}/${diagnostics.length} checks passed or were skipped.`, failures.length ? 'warning' : 'success');
-  toast(failures.length ? `${failures.length} read-only API check(s) failed` : 'All applicable read-only API checks passed', failures.length ? 'warning' : 'success');
+  appendAudit(
+    'API diagnostics completed',
+    `${diagnostics.length - failures.length}/${diagnostics.length} checks passed or were skipped.`,
+    failures.length ? 'warning' : 'success',
+  );
+  toast(
+    failures.length
+      ? `${failures.length} read-only API check(s) failed`
+      : 'All applicable read-only API checks passed',
+    failures.length ? 'warning' : 'success',
+  );
 }
 
 function openSettings() {
@@ -890,10 +982,13 @@ function openSettings() {
 }
 
 function validateApiBaseUrl(raw) {
-  const value = String(raw || '').trim().replace(/\/+$/, '');
+  const value = String(raw || '')
+    .trim()
+    .replace(/\/+$/, '');
   if (!value) return '';
   const url = new URL(value);
-  if (!['http:', 'https:'].includes(url.protocol)) throw new Error('API base URL must use HTTP or HTTPS.');
+  if (!['http:', 'https:'].includes(url.protocol))
+    throw new Error('API base URL must use HTTP or HTTPS.');
   const local = ['localhost', '127.0.0.1', '::1'].includes(url.hostname);
   if (url.protocol !== 'https:' && !local) throw new Error('Remote API base URLs must use HTTPS.');
   if (url.username || url.password) throw new Error('API base URLs cannot include credentials.');
@@ -930,7 +1025,9 @@ async function saveSettings() {
     ...state,
     ...(snapshot || { jobs: [], results: [], reviews: [], deliveries: [] }),
     stats: snapshot ? normalizeStats(snapshot.stats, snapshot.jobs) : normalizeStats({}, []),
-    capabilities: snapshot ? normalizeCapabilities(snapshot.capabilities) : normalizeCapabilities({}),
+    capabilities: snapshot
+      ? normalizeCapabilities(snapshot.capabilities)
+      : normalizeCapabilities({}),
     demoMode: connection.demoMode,
     connection: {
       apiBaseUrl: connection.apiBaseUrl,
@@ -967,7 +1064,11 @@ async function saveSettings() {
     },
   }));
   elements.settingsDialog.close();
-  appendAudit('Connection settings updated', connection.demoMode ? 'Design preview enabled.' : 'Configured API mode enabled.', 'neutral');
+  appendAudit(
+    'Connection settings updated',
+    connection.demoMode ? 'Design preview enabled.' : 'Configured API mode enabled.',
+    'neutral',
+  );
   toast('Session connection updated', 'success');
   if (!connection.demoMode) await refreshDashboard();
 }
@@ -1007,17 +1108,30 @@ function handleClick(event) {
   else if (target.matches('[data-view-results]')) {
     event.preventDefault();
     const jobId = target.dataset.viewResults;
-    store.setState((state) => ({ ...state, selectedResultJobId: jobId, drawer: null, route: 'results' }));
+    store.setState((state) => ({
+      ...state,
+      selectedResultJobId: jobId,
+      drawer: null,
+      route: 'results',
+    }));
     location.hash = '#/results';
     void loadResults(jobId);
-  } else if (target.matches('[data-export-results]')) exportResults(target.dataset.exportResults || 'json');
+  } else if (target.matches('[data-export-results]'))
+    exportResults(target.dataset.exportResults || 'json');
   else if (target.matches('[data-open-settings]')) openSettings();
   else if (target.matches('[data-load-more-jobs]')) void loadMoreJobs();
-  else if (target.matches('[data-load-more-results]')) void loadResults(store.getState().selectedResultJobId, { append: true });
+  else if (target.matches('[data-load-more-results]'))
+    void loadResults(store.getState().selectedResultJobId, { append: true });
   else if (target.matches('[data-clear-job-filters]')) {
-    store.setState((state) => ({ ...state, jobFilters: { search: '', status: '', sort: 'updated-desc' } }));
+    store.setState((state) => ({
+      ...state,
+      jobFilters: { search: '', status: '', sort: 'updated-desc' },
+    }));
   } else if (target.matches('[data-clear-result-filters]')) {
-    store.setState((state) => ({ ...state, resultFilters: { search: '', minConfidence: 0, contact: 'any' } }));
+    store.setState((state) => ({
+      ...state,
+      resultFilters: { search: '', minConfidence: 0, contact: 'any' },
+    }));
   } else if (target.matches('[data-refresh-results]')) {
     void loadResults(store.getState().selectedResultJobId);
   } else if (target.matches('[data-run-diagnostics]')) void runDiagnostics();
@@ -1043,7 +1157,10 @@ function handleInput(event) {
     restoreInputFocus('[data-job-search]', value);
   } else if (event.target.matches('[data-result-search]')) {
     const value = event.target.value;
-    store.setState((state) => ({ ...state, resultFilters: { ...state.resultFilters, search: value } }));
+    store.setState((state) => ({
+      ...state,
+      resultFilters: { ...state.resultFilters, search: value },
+    }));
     restoreInputFocus('[data-result-search]', value);
   } else if (event.target.name === 'seedUrls') {
     store.setState((state) => ({ ...state, draftSeedUrls: event.target.value }));
@@ -1053,15 +1170,27 @@ function handleInput(event) {
 
 function handleChange(event) {
   if (event.target.matches('[data-job-status]')) {
-    store.setState((state) => ({ ...state, jobFilters: { ...state.jobFilters, status: event.target.value } }));
+    store.setState((state) => ({
+      ...state,
+      jobFilters: { ...state.jobFilters, status: event.target.value },
+    }));
   } else if (event.target.matches('[data-job-sort]')) {
-    store.setState((state) => ({ ...state, jobFilters: { ...state.jobFilters, sort: event.target.value } }));
+    store.setState((state) => ({
+      ...state,
+      jobFilters: { ...state.jobFilters, sort: event.target.value },
+    }));
   } else if (event.target.matches('[data-result-job]')) {
     void loadResults(event.target.value);
   } else if (event.target.matches('[data-result-confidence]')) {
-    store.setState((state) => ({ ...state, resultFilters: { ...state.resultFilters, minConfidence: Number(event.target.value) } }));
+    store.setState((state) => ({
+      ...state,
+      resultFilters: { ...state.resultFilters, minConfidence: Number(event.target.value) },
+    }));
   } else if (event.target.matches('[data-result-contact]')) {
-    store.setState((state) => ({ ...state, resultFilters: { ...state.resultFilters, contact: event.target.value } }));
+    store.setState((state) => ({
+      ...state,
+      resultFilters: { ...state.resultFilters, contact: event.target.value },
+    }));
   } else if (event.target.matches('[data-import-file]')) {
     void parseImportFile(event.target.files?.[0]);
   }
@@ -1075,7 +1204,11 @@ function handleSubmit(event) {
 }
 
 function drawerFocusables() {
-  return [...elements.drawer.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')].filter((element) => !element.hasAttribute('hidden'));
+  return [
+    ...elements.drawer.querySelectorAll(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  ].filter((element) => !element.hasAttribute('hidden'));
 }
 
 function handleKeydown(event) {

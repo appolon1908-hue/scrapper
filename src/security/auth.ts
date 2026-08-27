@@ -31,9 +31,9 @@ class PrincipalRegistry {
     const stat = fs.statSync(config.servicePrincipalsFile);
     if (stat.mtimeMs === this.mtimeMs && Date.now() - this.loadedAt < 30_000) return;
 
-    const parsed = JSON.parse(
-      fs.readFileSync(config.servicePrincipalsFile, 'utf8'),
-    ) as { principals?: ServicePrincipal[] };
+    const parsed = JSON.parse(fs.readFileSync(config.servicePrincipalsFile, 'utf8')) as {
+      principals?: ServicePrincipal[];
+    };
     const principals = Array.isArray(parsed.principals) ? parsed.principals : [];
     const digests = new Set<string>();
 
@@ -76,7 +76,7 @@ class PrincipalRegistry {
         Buffer.from(digest, 'hex'),
       );
     });
-    return matches.length === 1 ? matches[0] ?? null : null;
+    return matches.length === 1 ? (matches[0] ?? null) : null;
   }
 }
 

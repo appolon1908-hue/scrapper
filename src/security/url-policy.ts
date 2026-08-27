@@ -86,9 +86,7 @@ export function isAllowedServiceUrl(raw: string, allowedHosts: string[]): boolea
     if (url.username || url.password) return false;
     if (url.protocol !== 'https:' && url.protocol !== 'http:') return false;
     const hostname = url.hostname.toLowerCase();
-    return allowedHosts.some(
-      (allowed) => hostname === allowed || hostname.endsWith(`.${allowed}`),
-    );
+    return allowedHosts.some((allowed) => hostname === allowed || hostname.endsWith(`.${allowed}`));
   } catch {
     return false;
   }

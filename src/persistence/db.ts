@@ -52,11 +52,11 @@ async function lockMigrations(client: pg.PoolClient): Promise<void> {
   await client.query('select pg_advisory_xact_lock(hashtext($1))', [MIGRATION_LOCK_NAME]);
 }
 
-export async function runMigrations(directory = path.join(process.cwd(), 'migrations')): Promise<void> {
+export async function runMigrations(
+  directory = path.join(process.cwd(), 'migrations'),
+): Promise<void> {
   await ensureMigrationTable();
-  const files = (await fs.readdir(directory))
-    .filter((name) => /^\d+.*\.sql$/.test(name))
-    .sort();
+  const files = (await fs.readdir(directory)).filter((name) => /^\d+.*\.sql$/.test(name)).sort();
 
   for (const filename of files) {
     const sql = await fs.readFile(path.join(directory, filename), 'utf8');
@@ -74,10 +74,10 @@ export async function runMigrations(directory = path.join(process.cwd(), 'migrat
         return;
       }
       await client.query(sql);
-      await client.query(
-        'insert into schema_migrations(filename,checksum) values($1,$2)',
-        [filename, checksum],
-      );
+      await client.query('insert into schema_migrations(filename,checksum) values($1,$2)', [
+        filename,
+        checksum,
+      ]);
       log('info', 'migration_applied', { filename });
     });
   }

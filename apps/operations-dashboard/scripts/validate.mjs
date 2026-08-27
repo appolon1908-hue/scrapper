@@ -31,33 +31,54 @@ for (const file of requiredFiles) {
   assert.equal(metadata.isFile(), true, `Required dashboard file is missing: ${file}`);
 }
 
-const [index, styles, enhancements, config, controller, guard, renderer, packageJson] = await Promise.all([
-  readFile(path.join(root, 'index.html'), 'utf8'),
-  readFile(path.join(root, 'styles.css'), 'utf8'),
-  readFile(path.join(root, 'enhancements.css'), 'utf8'),
-  readFile(path.join(root, 'config.js'), 'utf8'),
-  readFile(path.join(root, 'app-v2.js'), 'utf8'),
-  readFile(path.join(root, 'form-state-guard.js'), 'utf8'),
-  readFile(path.join(root, 'components-v2.js'), 'utf8'),
-  readFile(path.join(root, 'package.json'), 'utf8').then(JSON.parse),
-]);
+const [index, styles, enhancements, config, controller, guard, renderer, packageJson] =
+  await Promise.all([
+    readFile(path.join(root, 'index.html'), 'utf8'),
+    readFile(path.join(root, 'styles.css'), 'utf8'),
+    readFile(path.join(root, 'enhancements.css'), 'utf8'),
+    readFile(path.join(root, 'config.js'), 'utf8'),
+    readFile(path.join(root, 'app-v2.js'), 'utf8'),
+    readFile(path.join(root, 'form-state-guard.js'), 'utf8'),
+    readFile(path.join(root, 'components-v2.js'), 'utf8'),
+    readFile(path.join(root, 'package.json'), 'utf8').then(JSON.parse),
+  ]);
 
 assert.match(index, /<aside[^>]+id="sidebar"/, 'Dashboard requires a primary sidebar');
 assert.match(index, /<main[^>]+id="view"/, 'Dashboard requires a semantic main landmark');
 assert.match(index, /<dialog[^>]+id="settings-dialog"/, 'Dashboard requires a settings dialog');
-assert.match(index, /id="job-drawer"[\s\S]+role="dialog"/, 'Detail drawer must expose dialog semantics');
-assert.match(index, /<link rel="stylesheet" href="\.\/enhancements\.css" \/>/, 'Enhancement CSS missing');
+assert.match(
+  index,
+  /id="job-drawer"[\s\S]+role="dialog"/,
+  'Detail drawer must expose dialog semantics',
+);
+assert.match(
+  index,
+  /<link rel="stylesheet" href="\.\/enhancements\.css" \/>/,
+  'Enhancement CSS missing',
+);
 assert.match(index, /<script src="\.\/config\.js"><\/script>/, 'Runtime config must load first');
-assert.match(index, /<script type="module" src="\.\/app-v2\.js"><\/script>/, 'Corrected app entrypoint missing');
+assert.match(
+  index,
+  /<script type="module" src="\.\/app-v2\.js"><\/script>/,
+  'Corrected app entrypoint missing',
+);
 assert.doesNotMatch(index, /(>:src|href)="https?:\/\//i, 'External runtime assets are forbidden');
 assert.match(styles, /prefers-reduced-motion/, 'Reduced-motion support is required');
 assert.match(styles, /:focus-visible/, 'Visible keyboard focus is required');
 assert.match(enhancements, /import-dropzone/, 'Import dropzone styles are missing');
 assert.match(enhancements, /diagnostic-grid/, 'Diagnostic state styles are missing');
 assert.match(config, /demoMode:\s*true/, 'Checked-in dashboard config must default to demo mode');
-assert.match(config, /writeControlsEnabled:\s*false/, 'Checked-in config must keep writes disabled');
+assert.match(
+  config,
+  /writeControlsEnabled:\s*false/,
+  'Checked-in config must keep writes disabled',
+);
 assert.equal(packageJson.dependencies, undefined, 'Dashboard must not add runtime dependencies');
-assert.equal(packageJson.devDependencies, undefined, 'Dashboard must not add development dependencies');
+assert.equal(
+  packageJson.devDependencies,
+  undefined,
+  'Dashboard must not add development dependencies',
+);
 
 const snapshot = createDemoSnapshot();
 const state = {
@@ -131,7 +152,13 @@ for (const required of [
 }
 
 const jobs = renderRoute('jobs', { ...state, route: 'jobs' });
-for (const required of ['data-job-search', 'data-job-status', 'data-job-sort', 'data-clear-job-filters', 'data-load-more-jobs']) {
+for (const required of [
+  'data-job-search',
+  'data-job-status',
+  'data-job-sort',
+  'data-clear-job-filters',
+  'data-load-more-jobs',
+]) {
   assert.match(jobs, new RegExp(required), `Job interaction is missing: ${required}`);
 }
 
@@ -151,15 +178,26 @@ for (const required of [
 
 const integrations = renderRoute('integrations', { ...state, route: 'integrations' });
 assert.match(integrations, /data-run-diagnostics/, 'Read-only API diagnostics are missing');
-assert.match(integrations, /Mutation aliases are not auto-probed/, 'Mutation safety notice is missing');
+assert.match(
+  integrations,
+  /Mutation aliases are not auto-probed/,
+  'Mutation safety notice is missing',
+);
 
 const jobDrawer = renderDrawer({ ...state, drawer: { type: 'job', id: snapshot.jobs[0].id } });
 assert.match(jobDrawer, /data-copy=/, 'Job drawer copy controls are missing');
 assert.match(jobDrawer, /data-cancel-job=/, 'Job drawer cancel action is missing');
 
-const resultDrawer = renderDrawer({ ...state, drawer: { type: 'result', id: snapshot.results[0].id } });
+const resultDrawer = renderDrawer({
+  ...state,
+  drawer: { type: 'result', id: snapshot.results[0].id },
+});
 assert.match(resultDrawer, /Evidence/, 'Result drawer evidence section is missing');
-assert.match(resultDrawer, /Primary reference|primary reference/i, 'Result drawer action is missing');
+assert.match(
+  resultDrawer,
+  /Primary reference|primary reference/i,
+  'Result drawer action is missing',
+);
 
 for (const action of [
   'data-open-job',
@@ -176,13 +214,24 @@ for (const action of [
   assert.match(controller, new RegExp(action), `Controller handler is missing: ${action}`);
 }
 
-assert.doesNotMatch(controller, /localStorage/, 'Dashboard must not store tokens or state in localStorage');
+assert.doesNotMatch(
+  controller,
+  /localStorage/,
+  'Dashboard must not store tokens or state in localStorage',
+);
 const guardPosition = index.indexOf('./form-state-guard.js');
 const appPosition = index.indexOf('./app-v2.js');
-assert.ok(guardPosition >= 0 && guardPosition < appPosition, 'Form-state guard must load before the dashboard controller');
+assert.ok(
+  guardPosition >= 0 && guardPosition < appPosition,
+  'Form-state guard must load before the dashboard controller',
+);
 assert.match(guard, /MutationObserver/, 'Form-state guard must observe dashboard rerenders');
 assert.match(guard, /merge-import/, 'Form-state guard must preserve non-import form fields');
-assert.match(guard, /import\('\.\/browser-smoke\.js'\)/, 'Browser interaction smoke hook is missing');
+assert.match(
+  guard,
+  /import\('\.\/browser-smoke\.js'\)/,
+  'Browser interaction smoke hook is missing',
+);
 assert.doesNotMatch(renderer, /href="#"/, 'Placeholder links are forbidden');
 
 const budgets = {

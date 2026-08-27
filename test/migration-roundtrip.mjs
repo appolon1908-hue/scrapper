@@ -11,9 +11,7 @@ async function execute(relativePath) {
 }
 
 async function migrationNames() {
-  const result = await pool.query(
-    'select filename from schema_migrations order by filename',
-  );
+  const result = await pool.query('select filename from schema_migrations order by filename');
   return result.rows.map((row) => row.filename);
 }
 

@@ -2,8 +2,11 @@ const IMPORT_URL_KEYS = ['website', 'url', 'seedurl', 'seed_url', 'domain', 'hom
 const DASHBOARD_COMPANY_LIMIT = 500;
 
 export function normalizeHealthStatus(value, kind = 'health') {
-  const status = String(value?.status ?? value ?? 'unknown').trim().toLowerCase();
-  if (kind === 'readiness') return ['ready', 'ok', 'healthy'].includes(status) ? 'ready' : status || 'unknown';
+  const status = String(value?.status ?? value ?? 'unknown')
+    .trim()
+    .toLowerCase();
+  if (kind === 'readiness')
+    return ['ready', 'ok', 'healthy'].includes(status) ? 'ready' : status || 'unknown';
   return ['ok', 'healthy', 'ready', 'available'].includes(status) ? 'healthy' : status || 'unknown';
 }
 
@@ -23,16 +26,25 @@ export function normalizeCapabilities(input = {}) {
     crawl_job_api: boolean('crawl_job_api') || Boolean(input.version),
     http_crawler: boolean('http_crawler'),
     playwright_crawler: boolean('playwright_crawler'),
-    outbound_middleware_delivery: boolean('outbound_middleware_delivery', 'external_delivery_enabled'),
+    outbound_middleware_delivery: boolean(
+      'outbound_middleware_delivery',
+      'external_delivery_enabled',
+    ),
     registry_enrichment: boolean('registry_enrichment', 'registry_enrichment_enabled'),
     discovery: boolean('discovery', 'search_discovery_enabled'),
     n8n_reverse_command_inbox: boolean('n8n_reverse_command_inbox', 'durable_inbound_commands'),
     odoo_crm_projection: boolean('odoo_crm_projection', 'direct_odoo_delivery_enabled'),
-    authoritative_ein_provider: boolean('authoritative_ein_provider', 'registry_provider_connected'),
+    authoritative_ein_provider: boolean(
+      'authoritative_ein_provider',
+      'registry_provider_connected',
+    ),
     keycloak_human_login: boolean('keycloak_human_login'),
     runtime_paths_verified: boolean('runtime_paths_verified'),
     production_deployed: boolean('production_deployed', 'production_deployment_verified'),
-    max_companies_per_job: Math.min(number('max_companies_per_job', DASHBOARD_COMPANY_LIMIT), 5_000),
+    max_companies_per_job: Math.min(
+      number('max_companies_per_job', DASHBOARD_COMPANY_LIMIT),
+      5_000,
+    ),
     max_pages_per_job: number('max_pages_per_job', 50_000),
   };
 }
@@ -53,13 +65,21 @@ export function normalizeStats(input = {}, jobs = []) {
   };
   const queued = count('jobs_queued', jobCounts.queued, visibleCounts.queued || 0);
   const running = count('jobs_running', jobCounts.running, visibleCounts.running || 0);
-  const cancelling = count('jobs_cancel_requested', jobCounts.cancel_requested, visibleCounts.cancel_requested || 0);
+  const cancelling = count(
+    'jobs_cancel_requested',
+    jobCounts.cancel_requested,
+    visibleCounts.cancel_requested || 0,
+  );
   const completed = count('jobs_completed', jobCounts.completed, visibleCounts.completed || 0);
   const failed = count('jobs_failed', jobCounts.failed, visibleCounts.failed || 0);
   const cancelled = count('jobs_cancelled', jobCounts.cancelled, visibleCounts.cancelled || 0);
   return {
     ...input,
-    jobs_total: count('jobs_total', Object.values(jobCounts).reduce((sum, value) => sum + Number(value || 0), 0), jobs.length),
+    jobs_total: count(
+      'jobs_total',
+      Object.values(jobCounts).reduce((sum, value) => sum + Number(value || 0), 0),
+      jobs.length,
+    ),
     jobs_active: count('jobs_active', queued + running + cancelling, queued + running + cancelling),
     jobs_queued: queued,
     jobs_running: running,
@@ -83,7 +103,9 @@ export function mergeById(existing = [], incoming = []) {
 }
 
 export function filterJobs(jobs = [], filters = {}) {
-  const search = String(filters.search || '').trim().toLowerCase();
+  const search = String(filters.search || '')
+    .trim()
+    .toLowerCase();
   const status = String(filters.status || '');
   const sort = String(filters.sort || 'updated-desc');
   const filtered = jobs.filter((job) => {
@@ -100,12 +122,16 @@ export function filterJobs(jobs = [], filters = {}) {
     if (sort === 'created-asc') return new Date(left.created_at) - new Date(right.created_at);
     if (sort === 'created-desc') return new Date(right.created_at) - new Date(left.created_at);
     if (sort === 'status') return String(left.status).localeCompare(String(right.status));
-    return new Date(right.updated_at || right.created_at) - new Date(left.updated_at || left.created_at);
+    return (
+      new Date(right.updated_at || right.created_at) - new Date(left.updated_at || left.created_at)
+    );
   });
 }
 
 export function filterResults(items = [], filters = {}) {
-  const search = String(filters.search || '').trim().toLowerCase();
+  const search = String(filters.search || '')
+    .trim()
+    .toLowerCase();
   const minConfidence = Math.max(0, Math.min(1, Number(filters.minConfidence || 0)));
   const contact = String(filters.contact || 'any');
   return items.filter((item) => {
@@ -195,17 +221,24 @@ function parseCsvRows(text) {
 }
 
 function normalizeHeader(value) {
-  return String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
 }
 
 function normalizeCandidateUrl(value) {
   let candidate = String(value || '').trim();
   if (!candidate) throw new Error('Website is empty.');
-  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(candidate) && /^[a-z0-9.-]+(?::\d+)?(?:\/.*)?$/i.test(candidate)) {
+  if (
+    !/^[a-z][a-z0-9+.-]*:\/\//i.test(candidate) &&
+    /^[a-z0-9.-]+(?::\d+)?(?:\/.*)?$/i.test(candidate)
+  ) {
     candidate = `https://${candidate}`;
   }
   const url = new URL(candidate);
-  if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Only HTTP and HTTPS websites are accepted.');
+  if (!['http:', 'https:'].includes(url.protocol))
+    throw new Error('Only HTTP and HTTPS websites are accepted.');
   if (url.username || url.password) throw new Error('Website URLs cannot include credentials.');
   url.hash = '';
   return url.toString();
@@ -223,7 +256,10 @@ function objectUrl(record) {
 
 export function parseImportText(text, options = {}) {
   const format = String(options.format || '').toLowerCase();
-  const maxCompanies = Math.min(Number(options.maxCompanies || DASHBOARD_COMPANY_LIMIT), DASHBOARD_COMPANY_LIMIT);
+  const maxCompanies = Math.min(
+    Number(options.maxCompanies || DASHBOARD_COMPANY_LIMIT),
+    DASHBOARD_COMPANY_LIMIT,
+  );
   let records;
   if (format === 'json' || (!format && /^[\s\r\n]*[\[{]/.test(String(text)))) {
     const parsed = JSON.parse(String(text || ''));
@@ -234,9 +270,14 @@ export function parseImportText(text, options = {}) {
     }
   } else {
     const rows = parseCsvRows(text);
-    if (rows.length < 2) throw new Error('CSV must contain a header row and at least one company row.');
+    if (rows.length < 2)
+      throw new Error('CSV must contain a header row and at least one company row.');
     const headers = rows[0].map(normalizeHeader);
-    records = rows.slice(1).map((cells) => Object.fromEntries(headers.map((header, index) => [header, cells[index] || ''])));
+    records = rows
+      .slice(1)
+      .map((cells) =>
+        Object.fromEntries(headers.map((header, index) => [header, cells[index] || ''])),
+      );
   }
 
   const urls = [];
@@ -254,10 +295,17 @@ export function parseImportText(text, options = {}) {
         urls.push(url);
       }
     } catch (error) {
-      invalid.push({ row: index + 2, value: String(raw || ''), error: error instanceof Error ? error.message : String(error) });
+      invalid.push({
+        row: index + 2,
+        value: String(raw || ''),
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   });
-  if (urls.length > maxCompanies) throw new Error(`Import contains ${urls.length} unique websites; the dashboard limit is ${maxCompanies}.`);
+  if (urls.length > maxCompanies)
+    throw new Error(
+      `Import contains ${urls.length} unique websites; the dashboard limit is ${maxCompanies}.`,
+    );
   if (!urls.length) throw new Error('No valid public website URLs were found in the import.');
   return { urls, totalRows: records.length, duplicates, invalid };
 }
@@ -281,7 +329,8 @@ export function parseCrawlPayload(formData, options = {}) {
   const serverLimit = Number(capabilities.max_companies_per_job || DASHBOARD_COMPANY_LIMIT);
   const safeCompanyLimit = Math.min(DASHBOARD_COMPANY_LIMIT, serverLimit);
   if (!seedUrls.length) throw new Error('Add at least one public HTTP or HTTPS seed URL.');
-  if (seedUrls.length > safeCompanyLimit) throw new Error(`At most ${safeCompanyLimit} seed URLs are allowed.`);
+  if (seedUrls.length > safeCompanyLimit)
+    throw new Error(`At most ${safeCompanyLimit} seed URLs are allowed.`);
 
   const number = (name) => Number(formData.get(name));
   const payload = {
@@ -293,22 +342,43 @@ export function parseCrawlPayload(formData, options = {}) {
     maxCompanies: number('maxCompanies'),
     maxDepth: number('maxDepth'),
     requestsPerSecond: number('requestsPerSecond'),
-    countryCode: String(formData.get('countryCode') || 'US').trim().toUpperCase(),
+    countryCode: String(formData.get('countryCode') || 'US')
+      .trim()
+      .toUpperCase(),
   };
-  if (!Number.isInteger(payload.maxPages) || payload.maxPages < 1 || payload.maxPages > capabilities.max_pages_per_job) {
-    throw new Error(`Max pages must be between 1 and ${capabilities.max_pages_per_job.toLocaleString()}.`);
+  if (
+    !Number.isInteger(payload.maxPages) ||
+    payload.maxPages < 1 ||
+    payload.maxPages > capabilities.max_pages_per_job
+  ) {
+    throw new Error(
+      `Max pages must be between 1 and ${capabilities.max_pages_per_job.toLocaleString()}.`,
+    );
   }
-  if (!Number.isInteger(payload.maxCompanies) || payload.maxCompanies < 1 || payload.maxCompanies > safeCompanyLimit) {
+  if (
+    !Number.isInteger(payload.maxCompanies) ||
+    payload.maxCompanies < 1 ||
+    payload.maxCompanies > safeCompanyLimit
+  ) {
     throw new Error(`Max companies must be between 1 and ${safeCompanyLimit}.`);
   }
-  if (seedUrls.length > payload.maxCompanies) throw new Error('Seed URL count cannot exceed the max-company limit.');
-  if (!Number.isInteger(payload.maxDepth) || payload.maxDepth < 0 || payload.maxDepth > 8) throw new Error('Max depth must be between 0 and 8.');
-  if (!Number.isFinite(payload.requestsPerSecond) || payload.requestsPerSecond < 0.1 || payload.requestsPerSecond > 10) {
+  if (seedUrls.length > payload.maxCompanies)
+    throw new Error('Seed URL count cannot exceed the max-company limit.');
+  if (!Number.isInteger(payload.maxDepth) || payload.maxDepth < 0 || payload.maxDepth > 8)
+    throw new Error('Max depth must be between 0 and 8.');
+  if (
+    !Number.isFinite(payload.requestsPerSecond) ||
+    payload.requestsPerSecond < 0.1 ||
+    payload.requestsPerSecond > 10
+  ) {
     throw new Error('Requests per second must be between 0.1 and 10.');
   }
-  if (!/^[A-Z]{2}$/.test(payload.countryCode)) throw new Error('Country code must contain exactly two letters.');
-  if (payload.profile === 'registry' && !capabilities.registry_enrichment) throw new Error('Registry enrichment is not available in this API context.');
-  if (payload.mode === 'discovery' && !capabilities.discovery) throw new Error('Search discovery is not available in this API context.');
+  if (!/^[A-Z]{2}$/.test(payload.countryCode))
+    throw new Error('Country code must contain exactly two letters.');
+  if (payload.profile === 'registry' && !capabilities.registry_enrichment)
+    throw new Error('Registry enrichment is not available in this API context.');
+  if (payload.mode === 'discovery' && !capabilities.discovery)
+    throw new Error('Search discovery is not available in this API context.');
 
   const includePatterns = parseLineList(formData.get('includePatterns'));
   const excludePatterns = parseLineList(formData.get('excludePatterns'));
@@ -327,7 +397,20 @@ function csvCell(value) {
 }
 
 export function resultsToCsv(items = []) {
-  const headers = ['id', 'display_name', 'legal_name', 'domain', 'website', 'confidence', 'emails', 'phones', 'addresses', 'categories', 'first_seen_at', 'last_seen_at'];
+  const headers = [
+    'id',
+    'display_name',
+    'legal_name',
+    'domain',
+    'website',
+    'confidence',
+    'emails',
+    'phones',
+    'addresses',
+    'categories',
+    'first_seen_at',
+    'last_seen_at',
+  ];
   const rows = items.map((item) => {
     const record = item.record || {};
     return [
@@ -349,5 +432,9 @@ export function resultsToCsv(items = []) {
 }
 
 export function safeFilePart(value) {
-  return String(value || 'view').replace(/[^a-z0-9_.-]+/gi, '-').replace(/^-+|-+$/g, '') || 'view';
+  return (
+    String(value || 'view')
+      .replace(/[^a-z0-9_.-]+/gi, '-')
+      .replace(/^-+|-+$/g, '') || 'view'
+  );
 }

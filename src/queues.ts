@@ -28,11 +28,7 @@ export function crawlQueueJobId(jobId: string, dispatchVersion: number): string 
 
 export async function enqueueCrawlJob(jobId: string, dispatchVersion: number): Promise<string> {
   const queueId = crawlQueueJobId(jobId, dispatchVersion);
-  const job = await crawlQueue.add(
-    'crawl',
-    { jobId, dispatchVersion },
-    { jobId: queueId },
-  );
+  const job = await crawlQueue.add('crawl', { jobId, dispatchVersion }, { jobId: queueId });
   return String(job.id);
 }
 

@@ -1,10 +1,6 @@
 import crypto from 'node:crypto';
 import { mergeBusinessRecords } from '../domain/entity-resolution.js';
-import type {
-  BusinessRecord,
-  CrawlJobRequest,
-  ResultListQuery,
-} from '../domain/schemas.js';
+import type { BusinessRecord, CrawlJobRequest, ResultListQuery } from '../domain/schemas.js';
 import { pool, withTransaction } from './db.js';
 import type { BusinessResult } from './types.js';
 
@@ -136,10 +132,10 @@ export class BusinessRepository {
     query: ResultListQuery,
   ): Promise<{ items: BusinessResult[]; nextCursor: string | null }> {
     const cursor = query.cursor || null;
-    const owned = await pool.query(
-      'select 1 from crawl_jobs where tenant_id=$1 and id=$2',
-      [tenantId, jobId],
-    );
+    const owned = await pool.query('select 1 from crawl_jobs where tenant_id=$1 and id=$2', [
+      tenantId,
+      jobId,
+    ]);
     if (!owned.rowCount) throw new Error('not_found');
 
     const result = await pool.query<BusinessResult>(

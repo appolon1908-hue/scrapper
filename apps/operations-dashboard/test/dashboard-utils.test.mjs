@@ -104,7 +104,10 @@ test('crawl payload includes documented optional fields and enforces the 500-com
   assert.equal(payload.callbackReference, 'campaign-1');
 
   form.set('maxCompanies', '501');
-  assert.throws(() => parseCrawlPayload(form, { capabilities: { max_companies_per_job: 5_000 } }), /between 1 and 500/);
+  assert.throws(
+    () => parseCrawlPayload(form, { capabilities: { max_companies_per_job: 5_000 } }),
+    /between 1 and 500/,
+  );
 });
 
 test('unavailable registry and discovery modes fail closed', () => {
@@ -126,25 +129,63 @@ test('unavailable registry and discovery modes fail closed', () => {
 
 test('job and result filters cover search, status, sort, confidence, and contacts', () => {
   const jobs = [
-    { id: '2', status: 'failed', updated_at: '2026-01-02T00:00:00Z', payload: { seedUrls: ['https://beta.example/'] } },
-    { id: '1', status: 'completed', updated_at: '2026-01-03T00:00:00Z', payload: { seedUrls: ['https://alpha.example/'] } },
+    {
+      id: '2',
+      status: 'failed',
+      updated_at: '2026-01-02T00:00:00Z',
+      payload: { seedUrls: ['https://beta.example/'] },
+    },
+    {
+      id: '1',
+      status: 'completed',
+      updated_at: '2026-01-03T00:00:00Z',
+      payload: { seedUrls: ['https://alpha.example/'] },
+    },
   ];
-  assert.deepEqual(filterJobs(jobs, { search: 'alpha', status: 'completed', sort: 'updated-desc' }).map((item) => item.id), ['1']);
-  assert.deepEqual(filterJobs(jobs, { sort: 'status' }).map((item) => item.status), ['completed', 'failed']);
+  assert.deepEqual(
+    filterJobs(jobs, { search: 'alpha', status: 'completed', sort: 'updated-desc' }).map(
+      (item) => item.id,
+    ),
+    ['1'],
+  );
+  assert.deepEqual(
+    filterJobs(jobs, { sort: 'status' }).map((item) => item.status),
+    ['completed', 'failed'],
+  );
 
   const results = [
-    { id: 'a', record: { displayName: 'Alpha', confidence: 0.9, emails: ['a@example.com'], phones: [], categories: [] } },
-    { id: 'b', record: { displayName: 'Beta', confidence: 0.6, emails: [], phones: ['+1'], categories: [] } },
+    {
+      id: 'a',
+      record: {
+        displayName: 'Alpha',
+        confidence: 0.9,
+        emails: ['a@example.com'],
+        phones: [],
+        categories: [],
+      },
+    },
+    {
+      id: 'b',
+      record: { displayName: 'Beta', confidence: 0.6, emails: [], phones: ['+1'], categories: [] },
+    },
   ];
-  assert.deepEqual(filterResults(results, { search: 'alpha', minConfidence: 0.8, contact: 'email' }).map((item) => item.id), ['a']);
-  assert.deepEqual(filterResults(results, { contact: 'phone' }).map((item) => item.id), ['b']);
+  assert.deepEqual(
+    filterResults(results, { search: 'alpha', minConfidence: 0.8, contact: 'email' }).map(
+      (item) => item.id,
+    ),
+    ['a'],
+  );
+  assert.deepEqual(
+    filterResults(results, { contact: 'phone' }).map((item) => item.id),
+    ['b'],
+  );
 });
 
 test('merge and CSV export are deterministic and safe for commas', () => {
-  assert.deepEqual(mergeById([{ id: '1', value: 'old' }], [{ id: '1', value: 'new' }, { id: '2' }]), [
-    { id: '1', value: 'new' },
-    { id: '2' },
-  ]);
+  assert.deepEqual(
+    mergeById([{ id: '1', value: 'old' }], [{ id: '1', value: 'new' }, { id: '2' }]),
+    [{ id: '1', value: 'new' }, { id: '2' }],
+  );
   const csv = resultsToCsv([
     {
       id: '1',

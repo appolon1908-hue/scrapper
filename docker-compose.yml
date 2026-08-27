@@ -86,8 +86,7 @@ services:
       OUTBOUND_CA_FILE: /run/secrets/middleware_ca
       OUTBOUND_CLIENT_CERT_FILE: /run/secrets/client_cert
       OUTBOUND_CLIENT_KEY_FILE: /run/secrets/client_key
-    secrets:
-      [database_url, outbound_hmac, middleware_token, middleware_ca, client_cert, client_key]
+    secrets: [database_url, outbound_hmac, middleware_token, middleware_ca, client_cert, client_key]
     networks: [backend, egress]
     depends_on:
       migrate: { condition: service_completed_successfully }
@@ -105,7 +104,7 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    tmpfs: [/tmp:size=64m,mode=1777]
+    tmpfs: [/tmp:size=64m, mode=1777]
     mem_limit: 3g
     healthcheck: { test: [CMD, redis-cli, ping], interval: 10s, timeout: 3s, retries: 5 }
 
@@ -122,7 +121,8 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     mem_limit: 3g
-    healthcheck: { test: [CMD-SHELL, pg_isready -U scrapper], interval: 10s, timeout: 3s, retries: 5 }
+    healthcheck:
+      { test: [CMD-SHELL, pg_isready -U scrapper], interval: 10s, timeout: 3s, retries: 5 }
 
 networks:
   backend: { internal: true }

@@ -45,7 +45,8 @@ function parseRobots(text: string, userAgent: string): Omit<ParsedRobots, 'expir
   const normalizedAgent = userAgent.toLowerCase();
   const matching = groups.filter((group) =>
     group.agents.some(
-      (agent) => agent === '*' || normalizedAgent.includes(agent) || agent.includes(normalizedAgent),
+      (agent) =>
+        agent === '*' || normalizedAgent.includes(agent) || agent.includes(normalizedAgent),
     ),
   );
   const selected = matching.sort((a, b) => {

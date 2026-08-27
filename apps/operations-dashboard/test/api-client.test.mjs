@@ -40,7 +40,8 @@ test('documented read endpoints use exact paths and preserve text responses', as
     fetchImpl: async (url) => {
       paths.push(url);
       if (url === '/openapi.yaml') return textResponse('openapi: 3.1.0\n', 'application/yaml');
-      if (url === '/api/v2/metrics') return textResponse('# TYPE scrapper_process_uptime_seconds gauge\n');
+      if (url === '/api/v2/metrics')
+        return textResponse('# TYPE scrapper_process_uptime_seconds gauge\n');
       if (url.includes('/results')) return jsonResponse({ items: [], next_cursor: null });
       if (url.startsWith('/api/v2/jobs/')) return jsonResponse({ id: 'job-1' });
       if (url === '/api/v2/jobs?limit=1') return jsonResponse({ items: [], next_cursor: null });
@@ -87,7 +88,10 @@ test('canonical and alias create commands add correlation and idempotency header
   await client.createJob(payload, command);
   await client.createJobCommand(payload, command);
 
-  assert.deepEqual(observed.map((item) => item.url), ['/api/v2/jobs', '/api/v2/commands/crawl']);
+  assert.deepEqual(
+    observed.map((item) => item.url),
+    ['/api/v2/jobs', '/api/v2/commands/crawl'],
+  );
   for (const item of observed) {
     assert.equal(item.options.method, 'POST');
     assert.equal(item.options.headers.get('x-correlation-id'), 'correlation-1');
@@ -100,7 +104,11 @@ test('canonical and alias cancellation and retry commands use exact paths', asyn
   const paths = [];
   const client = new DashboardApiClient({
     fetchImpl: async (url, options) => {
-      paths.push({ url, method: options.method, correlation: options.headers.get('x-correlation-id') });
+      paths.push({
+        url,
+        method: options.method,
+        correlation: options.headers.get('x-correlation-id'),
+      });
       return jsonResponse({ id: 'job-1' });
     },
   });

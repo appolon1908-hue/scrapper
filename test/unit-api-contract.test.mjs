@@ -20,6 +20,21 @@ const implementedPaths = [
   '/api/v2/stats',
   '/api/v2/metrics',
   '/api/v2/capabilities',
+  '/platform/v2/tenants',
+  '/platform/v2/tenants/{tenantId}',
+  '/platform/v2/tenants/{tenantId}/summary',
+  '/api/v2/sources',
+  '/api/v2/schedules',
+  '/api/v2/integrations',
+  '/api/v2/businesses',
+  '/api/v2/businesses/{id}/evidence',
+  '/api/v2/reviews',
+  '/api/v2/outbox',
+  '/api/v2/inbox',
+  '/api/v2/dead-letters',
+  '/api/v2/exports',
+  '/api/v2/audit-events',
+  '/api/v2/control-plane/summary',
 ];
 
 test('OpenAPI contract declares every implemented route', () => {
@@ -31,7 +46,10 @@ test('OpenAPI contract declares every implemented route', () => {
 
 test('OpenAPI documents the safe job payload and stable dashboard capability names', () => {
   assert.match(contract, /^    CrawlJobPublicRequest:$/m);
-  assert.match(contract, /^        payload:\n          \$ref: '#\/components\/schemas\/CrawlJobPublicRequest'$/m);
+  assert.match(
+    contract,
+    /^        payload:\n          \$ref: '#\/components\/schemas\/CrawlJobPublicRequest'$/m,
+  );
   assert.match(contract, /^    Capabilities:$/m);
   for (const field of [
     'crawl_job_api',

@@ -99,10 +99,8 @@ export const config = Object.freeze({
   outboxLeaseSeconds: integer('OUTBOX_LEASE_SECONDS', 600, 30, 3600),
   perHostRequestsPerSecond: decimal('PER_HOST_REQUESTS_PER_SECOND', 1, 0.1, 10),
   middlewareBaseUrl: (process.env.MIDDLEWARE_BASE_URL || '').replace(/\/$/, ''),
-  middlewareResultsPath:
-    process.env.MIDDLEWARE_RESULTS_PATH || '/api/v2/scraper/results/batches',
-  middlewareEventsPath:
-    process.env.MIDDLEWARE_EVENTS_PATH || '/api/v2/scraper/jobs/events',
+  middlewareResultsPath: process.env.MIDDLEWARE_RESULTS_PATH || '/api/v2/scraper/results/batches',
+  middlewareEventsPath: process.env.MIDDLEWARE_EVENTS_PATH || '/api/v2/scraper/jobs/events',
   outboundAllowedHosts: list('OUTBOUND_ALLOWED_HOSTS'),
   outboundHmacSecret: readSecret('OUTBOUND_HMAC_SECRET_FILE', 'OUTBOUND_HMAC_SECRET'),
   outboundBearerToken: readSecret('OUTBOUND_BEARER_TOKEN_FILE', 'OUTBOUND_BEARER_TOKEN'),
@@ -116,4 +114,8 @@ export const config = Object.freeze({
   deliveryMaxAttempts: integer('DELIVERY_MAX_ATTEMPTS', 12, 1, 50),
   externalDeliveryEnabled,
   registryEnrichmentEnabled: bool('ENABLE_REGISTRY_ENRICHMENT', false),
+  reviewMutationsEnabled: bool('ENABLE_REVIEW_MUTATIONS', false),
+  scheduleExecutionEnabled: bool('ENABLE_SCHEDULE_EXECUTION', false),
+  outboxReplayEnabled: bool('ENABLE_OUTBOX_REPLAY', false),
+  exportProcessingEnabled: bool('ENABLE_EXPORT_PROCESSING', false),
 });
