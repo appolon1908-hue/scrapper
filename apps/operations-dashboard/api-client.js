@@ -1,4 +1,5 @@
 const JSON_CONTENT_TYPE = 'application/json';
+const DEFAULT_TIMEOUT_MS = 15_000;
 
 export class ApiError extends Error {
   constructor(message, options = {}) {
@@ -19,10 +20,38 @@ function encodeQuery(params = {}) {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (value === undefined || value === null || value === '') continue;
-    query.set(key, String(value));
+    if (Array.isArray(value)) {
+      for (const item of value) query.append(key, String(item));
+    } else {
+      query.set(key, String(value));
+    }
   }
   const encoded = query.toString();
   return encoded ? `?${encoded}` : '';
+}
+
+function requestSignal(externalSignal, timeoutMs) {
+  const controller = new AbortController();
+  const abort = () => controller.abort(externalSignal?.reason);
+  if (externalSignal?.aborted) abort();
+  else externalSignal?.addEventListener('abort', abort, { once: true });
+  const timer = setTimeout(() => controller.abort(new DOMException('Request timed out', 'TimeoutError')), timeoutMs);
+  return {
+    signal: controller.signal,
+    cleanup() {
+      clearTimeout(timer);
+      externalSignal?.removeEventListener('abort', abort);
+    },
+  };
+}
+
+async function parseResponse(response) {
+  if (response.status === 204) return null;
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('/json') || contentType.includes('+json')) {
+    return response.json().catch(() => ({}));
+  }
+  return response.text().catch(() => '');
 }
 
 export function newCommandId() {
@@ -37,9 +66,13 @@ export class DashboardApiClient {
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
     this.getAccessToken = options.getAccessToken ?? (() => null);
     this.credentials = options.credentials ?? 'same-origin';
+    this.timeoutMs = Number(options.timeoutMs || DEFAULT_TIMEOUT_MS);
 
     if (typeof this.fetchImpl !== 'function') {
       throw new TypeError('A fetch implementation is required');
+    }
+    if (!Number.isFinite(this.timeoutMs) || this.timeoutMs < 1_000 || this.timeoutMs > 120_000) {
+      throw new TypeError('timeoutMs must be between 1,000 and 120,000');
     }
   }
 
@@ -47,17 +80,18 @@ export class DashboardApiClient {
     return new DashboardApiClient({
       baseUrl: options.baseUrl ?? this.baseUrl,
       tenantId: options.tenantId ?? this.tenantId,
-      fetchImpl: this.fetchImpl,
+      fetchImpl: options.fetchImpl ?? this.fetchImpl,
       getAccessToken: options.getAccessToken ?? this.getAccessToken,
-      credentials: this.credentials,
+      credentials: options.credentials ?? this.credentials,
+      timeoutMs: options.timeoutMs ?? this.timeoutMs,
     });
   }
 
   async request(path, options = {}) {
-    const method = options.method ?? 'GET';
+    if (!String(path).startsWith('/')) throw new TypeError('API path must start with /');
+    const method = String(options.method ?? 'GET').toUpperCase();
     const headers = new Headers(options.headers || {});
     headers.set('accept', options.accept ?? JSON_CONTENT_TYPE);
-
     if (this.tenantId) headers.set('x-tenant-id', this.tenantId);
 
     const token = await this.getAccessToken();
@@ -69,6 +103,7 @@ export class DashboardApiClient {
       body = JSON.stringify(options.body);
     }
 
+    const deadline = requestSignal(options.signal, options.timeoutMs ?? this.timeoutMs);
     let response;
     try {
       response = await this.fetchImpl(`${this.baseUrl}${path}`, {
@@ -76,30 +111,28 @@ export class DashboardApiClient {
         headers,
         body,
         credentials: this.credentials,
-        signal: options.signal,
+        signal: deadline.signal,
+        cache: options.cache ?? 'no-store',
       });
     } catch (error) {
-      throw new ApiError(error instanceof Error ? error.message : 'Network request failed', {
-        code: 'network_error',
+      const timedOut = deadline.signal.aborted && !options.signal?.aborted;
+      throw new ApiError(timedOut ? 'Request timed out' : error instanceof Error ? error.message : 'Network request failed', {
+        code: timedOut ? 'request_timeout' : 'network_error',
       });
+    } finally {
+      deadline.cleanup();
     }
 
-    const contentType = response.headers.get('content-type') || '';
-    const isJson = contentType.includes(JSON_CONTENT_TYPE);
-    const payload = isJson
-      ? await response.json().catch(() => ({}))
-      : await response.text().catch(() => '');
-
+    const payload = await parseResponse(response);
     if (!response.ok) {
       const errorPayload = typeof payload === 'object' && payload ? payload : {};
-      throw new ApiError(errorPayload.error || `Request failed with ${response.status}`, {
+      throw new ApiError(errorPayload.error || errorPayload.message || `Request failed with ${response.status}`, {
         status: response.status,
         code: errorPayload.error || 'request_failed',
         requestId: errorPayload.request_id || response.headers.get('x-request-id'),
-        details: errorPayload.details || payload,
+        details: errorPayload.details ?? payload,
       });
     }
-
     return payload;
   }
 
@@ -115,12 +148,20 @@ export class DashboardApiClient {
     return this.request('/readyz', options);
   }
 
+  openApiDocument(options = {}) {
+    return this.request('/openapi.yaml', { ...options, accept: 'application/yaml, text/yaml, text/plain' });
+  }
+
   capabilities(options) {
     return this.request('/api/v2/capabilities', options);
   }
 
   stats(options) {
     return this.request('/api/v2/stats', options);
+  }
+
+  metrics(options = {}) {
+    return this.request('/api/v2/metrics', { ...options, accept: 'text/plain' });
   }
 
   listJobs(query = {}, options = {}) {
@@ -132,9 +173,17 @@ export class DashboardApiClient {
   }
 
   createJob(payload, command = {}, options = {}) {
+    return this.createJobAt('/api/v2/jobs', payload, command, options);
+  }
+
+  createJobCommand(payload, command = {}, options = {}) {
+    return this.createJobAt('/api/v2/commands/crawl', payload, command, options);
+  }
+
+  createJobAt(path, payload, command, options) {
     const correlationId = command.correlationId || newCommandId();
     const idempotencyKey = command.idempotencyKey || newCommandId();
-    return this.request('/api/v2/jobs', {
+    return this.request(path, {
       ...options,
       method: 'POST',
       body: payload,
@@ -147,18 +196,23 @@ export class DashboardApiClient {
   }
 
   cancelJob(id, command = {}, options = {}) {
-    return this.request(`/api/v2/jobs/${encodeURIComponent(id)}/cancel`, {
-      ...options,
-      method: 'POST',
-      headers: {
-        ...options.headers,
-        'x-correlation-id': command.correlationId || newCommandId(),
-      },
-    });
+    return this.jobCommand(`/api/v2/jobs/${encodeURIComponent(id)}/cancel`, command, options);
+  }
+
+  cancelJobCommand(id, command = {}, options = {}) {
+    return this.jobCommand(`/api/v2/commands/jobs/${encodeURIComponent(id)}/cancel`, command, options);
   }
 
   retryJob(id, command = {}, options = {}) {
-    return this.request(`/api/v2/jobs/${encodeURIComponent(id)}/retry`, {
+    return this.jobCommand(`/api/v2/jobs/${encodeURIComponent(id)}/retry`, command, options);
+  }
+
+  retryJobCommand(id, command = {}, options = {}) {
+    return this.jobCommand(`/api/v2/commands/jobs/${encodeURIComponent(id)}/retry`, command, options);
+  }
+
+  jobCommand(path, command, options) {
+    return this.request(path, {
       ...options,
       method: 'POST',
       headers: {
@@ -169,9 +223,6 @@ export class DashboardApiClient {
   }
 
   listResults(id, query = {}, options = {}) {
-    return this.request(
-      `/api/v2/jobs/${encodeURIComponent(id)}/results${encodeQuery(query)}`,
-      options,
-    );
+    return this.request(`/api/v2/jobs/${encodeURIComponent(id)}/results${encodeQuery(query)}`, options);
   }
 }

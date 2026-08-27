@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Codestra Business Scrapper API
-  version: 2.0.0
+  version: 2.1.0
   description: |
     Multi-tenant business website crawl and CRM-enrichment control plane.
     The OpenAPI document describes the implemented API surface only. It does
@@ -102,14 +102,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/JobCreateResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '409':
-          $ref: '#/components/responses/Conflict'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
     get:
       tags: [Jobs]
       operationId: listCrawlJobs
@@ -131,21 +127,10 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [items, next_cursor]
-                properties:
-                  items:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Job'
-                  next_cursor:
-                    type: [string, 'null']
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+                $ref: '#/components/schemas/JobPage'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /api/v2/commands/crawl:
     post:
       tags: [Jobs]
@@ -174,14 +159,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/JobCreateResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '409':
-          $ref: '#/components/responses/Conflict'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /api/v2/jobs/{id}:
     get:
       tags: [Jobs]
@@ -191,19 +172,15 @@ paths:
         - $ref: '#/components/parameters/JobId'
       responses:
         '200':
-          description: Crawl job
+          description: Crawl job with a safe request summary. Verification input and internal worker fields are omitted.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Job'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /api/v2/jobs/{id}/results:
     get:
       tags: [Jobs]
@@ -226,29 +203,11 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [items, next_cursor]
-                properties:
-                  items:
-                    type: array
-                    items:
-                      type: object
-                      required: [id, record]
-                      properties:
-                        id: { type: string, format: uuid }
-                        record:
-                          $ref: '#/components/schemas/BusinessRecord'
-                  next_cursor:
-                    type: [string, 'null']
-                    format: uuid
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+                $ref: '#/components/schemas/ResultPage'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /api/v2/jobs/{id}/cancel:
     post:
       tags: [Jobs]
@@ -264,8 +223,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Job'
-        '404':
-          $ref: '#/components/responses/NotFound'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /api/v2/commands/jobs/{id}/cancel:
     post:
       tags: [Jobs]
@@ -282,8 +243,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Job'
-        '404':
-          $ref: '#/components/responses/NotFound'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /api/v2/jobs/{id}/retry:
     post:
       tags: [Jobs]
@@ -299,8 +262,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Job'
-        '409':
-          $ref: '#/components/responses/Conflict'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /api/v2/commands/jobs/{id}/retry:
     post:
       tags: [Jobs]
@@ -317,8 +282,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Job'
-        '409':
-          $ref: '#/components/responses/Conflict'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /api/v2/stats:
     get:
       tags: [Operations]
@@ -327,10 +294,13 @@ paths:
         - $ref: '#/components/parameters/TenantHeader'
       responses:
         '200':
-          description: Tenant job, business and outbox counts
+          description: Tenant job, business-entity, and outbox counts
           content:
             application/json:
-              schema: { type: object, additionalProperties: true }
+              schema:
+                $ref: '#/components/schemas/TenantStats'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /api/v2/metrics:
     get:
       tags: [Operations]
@@ -343,6 +313,8 @@ paths:
           content:
             text/plain:
               schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /api/v2/capabilities:
     get:
       tags: [Operations]
@@ -351,10 +323,13 @@ paths:
         - $ref: '#/components/parameters/TenantHeader'
       responses:
         '200':
-          description: Implemented and disabled capabilities
+          description: Implemented and disabled capabilities. False or absent capabilities must never be interpreted as connected.
           content:
             application/json:
-              schema: { type: object, additionalProperties: true }
+              schema:
+                $ref: '#/components/schemas/Capabilities'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 components:
   securitySchemes:
     bearerAuth:
@@ -387,32 +362,27 @@ components:
       description: Invalid request
       content:
         application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
+          schema: { $ref: '#/components/schemas/Error' }
     Unauthorized:
       description: Authentication failed
       content:
         application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
+          schema: { $ref: '#/components/schemas/Error' }
     Forbidden:
       description: Required scope is missing
       content:
         application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
+          schema: { $ref: '#/components/schemas/Error' }
     NotFound:
       description: Resource was not found
       content:
         application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
+          schema: { $ref: '#/components/schemas/Error' }
     Conflict:
       description: Request conflicts with current state
       content:
         application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
+          schema: { $ref: '#/components/schemas/Error' }
   schemas:
     Health:
       type: object
@@ -452,26 +422,10 @@ components:
           type: string
           enum: [auto, http, playwright]
           default: auto
-        maxPages:
-          type: integer
-          minimum: 1
-          maximum: 50000
-          default: 250
-        maxCompanies:
-          type: integer
-          minimum: 1
-          maximum: 5000
-          default: 500
-        maxDepth:
-          type: integer
-          minimum: 0
-          maximum: 8
-          default: 3
-        requestsPerSecond:
-          type: number
-          minimum: 0.1
-          maximum: 10
-          default: 1
+        maxPages: { type: integer, minimum: 1, maximum: 50000, default: 250 }
+        maxCompanies: { type: integer, minimum: 1, maximum: 5000, default: 500 }
+        maxDepth: { type: integer, minimum: 0, maximum: 8, default: 3 }
+        requestsPerSecond: { type: number, minimum: 0.1, maximum: 10, default: 1 }
         includePatterns:
           type: array
           maxItems: 50
@@ -482,32 +436,56 @@ components:
           maxItems: 50
           items: { type: string, minLength: 1, maxLength: 300 }
           default: []
-        countryCode:
-          type: string
-          pattern: '^[A-Z]{2}$'
-          default: US
-        callbackReference:
-          type: string
-          maxLength: 200
+        countryCode: { type: string, pattern: '^[A-Z]{2}$', default: US }
+        callbackReference: { type: string, maxLength: 200 }
         tags:
           type: object
-          additionalProperties:
-            type: string
-            maxLength: 500
+          additionalProperties: { type: string, maxLength: 500 }
           default: {}
         verification:
           type: object
           additionalProperties: false
           properties:
-            knownEin:
-              type: string
-              pattern: '^\d{2}-?\d{7}$'
-            provider:
-              type: string
-              maxLength: 100
-            consentReference:
-              type: string
-              maxLength: 200
+            knownEin: { type: string, pattern: '^\d{2}-?\d{7}$' }
+            provider: { type: string, maxLength: 100 }
+            consentReference: { type: string, maxLength: 200 }
+    CrawlJobPublicRequest:
+      type: object
+      description: Safe request summary returned to authorized operators. Sensitive verification input is always omitted.
+      required: [seedUrls]
+      additionalProperties: false
+      properties:
+        seedUrls:
+          type: array
+          minItems: 1
+          maxItems: 5000
+          items: { type: string, format: uri }
+        profile:
+          type: string
+          enum: [company, contacts, registry, full]
+        mode:
+          type: string
+          enum: [single, domain, list, discovery]
+        browser:
+          type: string
+          enum: [auto, http, playwright]
+        maxPages: { type: integer, minimum: 1, maximum: 50000 }
+        maxCompanies: { type: integer, minimum: 1, maximum: 5000 }
+        maxDepth: { type: integer, minimum: 0, maximum: 8 }
+        requestsPerSecond: { type: number, minimum: 0.1, maximum: 10 }
+        includePatterns:
+          type: array
+          maxItems: 50
+          items: { type: string }
+        excludePatterns:
+          type: array
+          maxItems: 50
+          items: { type: string }
+        countryCode: { type: string, pattern: '^[A-Z]{2}$' }
+        callbackReference: { type: string, maxLength: 200 }
+        tags:
+          type: object
+          additionalProperties: { type: string }
     Job:
       type: object
       required:
@@ -515,6 +493,7 @@ components:
         - tenant_id
         - correlation_id
         - status
+        - payload
         - progress
         - error
         - version
@@ -526,8 +505,9 @@ components:
         id: { type: string, format: uuid }
         tenant_id: { type: string }
         correlation_id: { type: string }
-        status:
-          $ref: '#/components/schemas/JobStatus'
+        status: { $ref: '#/components/schemas/JobStatus' }
+        payload:
+          $ref: '#/components/schemas/CrawlJobPublicRequest'
         progress: { type: object, additionalProperties: true }
         error:
           type: [object, 'null']
@@ -546,6 +526,14 @@ components:
           required: [duplicate]
           properties:
             duplicate: { type: boolean }
+    JobPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Job' }
+        next_cursor: { type: [string, 'null'] }
     Evidence:
       type: object
       required: [sourceUrl, extractor, capturedAt]
@@ -565,8 +553,7 @@ components:
         confidence: { type: number, minimum: 0, maximum: 1 }
         evidence:
           type: array
-          items:
-            $ref: '#/components/schemas/Evidence'
+          items: { $ref: '#/components/schemas/Evidence' }
     BusinessRecord:
       type: object
       required:
@@ -603,8 +590,7 @@ components:
         categories: { type: array, items: { type: string } }
         officers:
           type: array
-          items:
-            $ref: '#/components/schemas/PublicOfficer'
+          items: { $ref: '#/components/schemas/PublicOfficer' }
         einMasked: { type: [string, 'null'] }
         einFingerprint: { type: [string, 'null'] }
         einStatus:
@@ -615,7 +601,82 @@ components:
           type: object
           additionalProperties:
             type: array
-            items:
-              $ref: '#/components/schemas/Evidence'
+            items: { $ref: '#/components/schemas/Evidence' }
         firstSeenAt: { type: string, format: date-time }
         lastSeenAt: { type: string, format: date-time }
+    ResultPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [id, record]
+            properties:
+              id: { type: string, format: uuid }
+              record: { $ref: '#/components/schemas/BusinessRecord' }
+        next_cursor: { type: [string, 'null'], format: uuid }
+    TenantStats:
+      type: object
+      required: [jobs, business_entities, outbox]
+      properties:
+        jobs:
+          type: object
+          additionalProperties: { type: integer, minimum: 0 }
+        business_entities: { type: integer, minimum: 0 }
+        outbox:
+          type: object
+          additionalProperties: { type: integer, minimum: 0 }
+    Capabilities:
+      type: object
+      required:
+        - version
+        - max_companies_per_job
+        - max_pages_per_job
+        - robots_policy
+        - private_network_crawling
+        - login_or_captcha_bypass
+        - crawl_job_api
+        - http_crawler
+        - playwright_crawler
+        - outbound_middleware_delivery
+        - registry_enrichment
+        - discovery
+        - n8n_reverse_command_inbox
+        - odoo_crm_projection
+        - authoritative_ein_provider
+        - keycloak_human_login
+        - runtime_paths_verified
+        - production_deployed
+        - ein_storage
+      additionalProperties: true
+      properties:
+        version: { type: string }
+        max_companies_per_job: { type: integer, minimum: 1 }
+        max_pages_per_job: { type: integer, minimum: 1 }
+        robots_policy: { type: string }
+        private_network_crawling: { type: boolean }
+        login_or_captcha_bypass: { type: boolean }
+        crawl_job_api: { type: boolean }
+        http_crawler: { type: boolean }
+        playwright_crawler: { type: boolean }
+        outbound_middleware_delivery: { type: boolean }
+        registry_enrichment: { type: boolean }
+        discovery: { type: boolean }
+        n8n_reverse_command_inbox: { type: boolean }
+        odoo_crm_projection: { type: boolean }
+        authoritative_ein_provider: { type: boolean }
+        keycloak_human_login: { type: boolean }
+        runtime_paths_verified: { type: boolean }
+        production_deployed: { type: boolean }
+        dashboard_source_available: { type: boolean }
+        external_delivery_enabled: { type: boolean }
+        registry_enrichment_enabled: { type: boolean }
+        registry_provider_connected: { type: boolean }
+        durable_inbound_commands: { type: boolean }
+        direct_odoo_delivery_enabled: { type: boolean }
+        search_discovery_enabled: { type: boolean }
+        admin_console_available: { type: boolean }
+        production_deployment_verified: { type: boolean }
+        ein_storage: { type: string }
