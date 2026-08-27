@@ -38,86 +38,109 @@ active_workflows=(
   .github/workflows/cancel-stale-publish-runs.yml
 )
 
-for file in "${active_workflows[@]}"; do
+required_scripts=(
+  scripts/runtime-path-inventory.sh
+  scripts/verify-release-context.sh
+  scripts/verify-release-image.sh
+  scripts/validate-workflow-policy.rb
+  scripts/validate-deployment-scaffolding.sh
+  scripts/deploy-staging.sh
+  scripts/rollback-staging.sh
+  scripts/deploy-production.sh
+  scripts/rollback-production.sh
+)
+
+for file in "${active_workflows[@]}" "${required_scripts[@]}"; do
   require_file "$file"
 done
-
-require_file scripts/runtime-path-inventory.sh
-require_file scripts/deploy-staging.sh
-require_file scripts/rollback-staging.sh
 require_file docs/release/RUNTIME_PATH_VERIFICATION.md
 
-for obsolete in \
-  .github/workflows/deploy-staging-v2.yml; do
-  [[ ! -e "$obsolete" ]] || fail "OBSOLETE_WORKFLOW_PRESENT:$obsolete"
-done
+[[ ! -e .github/workflows/deploy-staging-v2.yml ]] || fail 'OBSOLETE_WORKFLOW_PRESENT:deploy-staging-v2.yml'
+
+if command -v ruby >/dev/null 2>&1; then
+  ruby scripts/validate-workflow-policy.rb || fail 'PARSED_WORKFLOW_POLICY_FAILED'
+else
+  fail 'RUBY_REQUIRED_FOR_WORKFLOW_POLICY'
+fi
 
 for file in .github/workflows/*.yml .github/workflows/*.yaml; do
   [[ -e "$file" ]] || continue
-  forbid_text "$file" "ssh-keyscan"
-  while IFS= read -r use_line; do
-    ref="${use_line#*@}"
-    ref="${ref%%[[:space:]#]*}"
-    if [[ ! "$ref" =~ ^[a-f0-9]{40}$ ]]; then
-      fail "UNPINNED_ACTION:$file:$use_line"
-    fi
-  done < <(grep -E '^[[:space:]]*-[[:space:]]+uses:[[:space:]]+[^.][^[:space:]]+@' "$file" || true)
+  forbid_text "$file" 'ssh-keyscan'
 done
 
-require_text .github/workflows/runtime-path-inventory.yml "workflow_dispatch:"
-forbid_text .github/workflows/runtime-path-inventory.yml "  push:"
-forbid_text .github/workflows/runtime-path-inventory.yml "  schedule:"
-require_text .github/workflows/runtime-path-inventory.yml "Runtime path inventory (read only)"
-require_text .github/workflows/runtime-path-inventory.yml "scripts/runtime-path-inventory.sh"
+require_text .github/workflows/runtime-path-inventory.yml 'workflow_dispatch:'
+forbid_text .github/workflows/runtime-path-inventory.yml '  push:'
+forbid_text .github/workflows/runtime-path-inventory.yml '  schedule:'
+require_text .github/workflows/runtime-path-inventory.yml 'Runtime path inventory (read only)'
+require_text .github/workflows/runtime-path-inventory.yml 'scripts/runtime-path-inventory.sh'
 
-require_text .github/workflows/publish-image.yml "intentionally inert"
-require_text .github/workflows/cancel-stale-publish-runs.yml "intentionally inert"
-forbid_text .github/workflows/publish-image.yml "packages: write"
-forbid_text .github/workflows/publish-image.yml "  push:"
-forbid_text .github/workflows/cancel-stale-publish-runs.yml "actions: write"
-forbid_text .github/workflows/cancel-stale-publish-runs.yml "  schedule:"
+for legacy in .github/workflows/publish-image.yml .github/workflows/cancel-stale-publish-runs.yml; do
+  require_text "$legacy" 'intentionally inert'
+  forbid_text "$legacy" '  push:'
+  forbid_text "$legacy" '  schedule:'
+done
+forbid_text .github/workflows/publish-image.yml 'packages: write'
+forbid_text .github/workflows/cancel-stale-publish-runs.yml 'actions: write'
 
 for deploy_file in .github/workflows/deploy-staging.yml .github/workflows/production-deploy.yml; do
-  require_text "$deploy_file" "workflow_dispatch:"
-  forbid_text "$deploy_file" "  push:"
-  forbid_text "$deploy_file" "  schedule:"
-  require_text "$deploy_file" "runtime_fingerprint:"
-  require_text "$deploy_file" "runtime_root:"
-  require_text "$deploy_file" "runtime_env_file:"
-  require_text "$deploy_file" "runtime_secrets_root:"
-  require_text "$deploy_file" "ready_for_write_disabled_deploy=true"
-  require_text "$deploy_file" "StrictHostKeyChecking=yes"
-  require_text "$deploy_file" "UserKnownHostsFile="
-  forbid_text "$deploy_file" "mkdir -p '\$STAGING_ROOT'"
-  forbid_text "$deploy_file" "STAGING_ENV_CONTENT"
-  forbid_text "$deploy_file" ".canary.env"
-  forbid_text "$deploy_file" "SCRAPPER_PRODUCTION_PATH"
-  forbid_text "$deploy_file" "/opt/codestra/scrapper-production"
+  require_text "$deploy_file" 'workflow_dispatch:'
+  forbid_text "$deploy_file" '  push:'
+  forbid_text "$deploy_file" '  schedule:'
+  require_text "$deploy_file" 'runtime_fingerprint:'
+  require_text "$deploy_file" 'runtime_root:'
+  require_text "$deploy_file" 'runtime_env_file:'
+  require_text "$deploy_file" 'runtime_secrets_root:'
+  require_text "$deploy_file" 'ready_for_write_disabled_deploy=true'
+  require_text "$deploy_file" 'StrictHostKeyChecking=yes'
+  require_text "$deploy_file" 'UserKnownHostsFile='
+  require_text "$deploy_file" 'scripts/verify-release-context.sh'
+  require_text "$deploy_file" 'scripts/verify-release-image.sh'
+  require_text "$deploy_file" 'DOCKER_CONFIG='
+  require_text "$deploy_file" 'docker_config='
+  require_text "$deploy_file" 'rm -rf'
+  require_text "$deploy_file" '--password-stdin'
+  forbid_text "$deploy_file" 'ssh-keyscan'
+  forbid_text "$deploy_file" 'STAGING_ENV_CONTENT'
+  forbid_text "$deploy_file" '.canary.env'
+  forbid_text "$deploy_file" '/opt/codestra/scrapper-production'
 done
 
-forbid_text .github/workflows/release-readiness.yml "remote-staging:"
-forbid_text .github/workflows/release-readiness.yml "SCRAPPER_STAGING_HOST"
-forbid_text .github/workflows/release-readiness.yml "scp "
-forbid_text .github/workflows/release-readiness.yml "ssh "
+require_text .github/workflows/deploy-staging.yml 'PREVIOUS_IMAGE_REF'
+require_text .github/workflows/deploy-staging.yml 'IMAGE_RELATIONSHIP: ancestor'
+require_text .github/workflows/production-deploy.yml 'PREVIOUS_IMAGE_REF'
+require_text .github/workflows/production-deploy.yml 'IMAGE_RELATIONSHIP: ancestor'
+require_text .github/workflows/production-deploy.yml 'rollback-production.sh'
+require_text .github/workflows/production-deploy.yml 'fail-after-rollback'
+require_text .github/workflows/production-deploy.yml 'database_restore_performed=false'
 
-require_text .github/workflows/ci.yml "deployment-policy:"
-require_text .github/workflows/ci.yml "scripts/validate-deployment-scaffolding.sh"
-require_text .github/workflows/configure-release-protection.yml "\"deployment-policy\""
+forbid_text .github/workflows/release-readiness.yml 'remote-staging:'
+forbid_text .github/workflows/release-readiness.yml 'SCRAPPER_STAGING_HOST'
+forbid_text .github/workflows/release-readiness.yml 'scp '
+forbid_text .github/workflows/release-readiness.yml 'ssh '
+require_text .github/workflows/release-readiness.yml 'needs: [verify, deployment-policy, branch-governance, gateway-validation]'
 
-forbid_text scripts/runtime-path-inventory.sh "docker compose up"
-forbid_text scripts/runtime-path-inventory.sh "docker compose pull"
-forbid_text scripts/runtime-path-inventory.sh "systemctl start"
-forbid_text scripts/runtime-path-inventory.sh "systemctl restart"
-forbid_text scripts/runtime-path-inventory.sh "mkdir "
-forbid_text scripts/runtime-path-inventory.sh "rm "
-forbid_text scripts/runtime-path-inventory.sh "mv "
-forbid_text scripts/runtime-path-inventory.sh "cp "
+require_text .github/workflows/ci.yml 'deployment-policy:'
+require_text .github/workflows/ci.yml 'scripts/validate-workflow-policy.rb'
+require_text .github/workflows/configure-release-protection.yml '"deployment-policy"'
+
+forbid_text scripts/runtime-path-inventory.sh 'docker compose up'
+forbid_text scripts/runtime-path-inventory.sh 'docker compose pull'
+forbid_text scripts/runtime-path-inventory.sh 'systemctl start'
+forbid_text scripts/runtime-path-inventory.sh 'systemctl restart'
+forbid_text scripts/runtime-path-inventory.sh 'mkdir '
+forbid_text scripts/runtime-path-inventory.sh 'rm '
+forbid_text scripts/runtime-path-inventory.sh 'mv '
+forbid_text scripts/runtime-path-inventory.sh 'cp '
 
 if (( failures > 0 )); then
-  echo "DEPLOYMENT_SCAFFOLDING=FAIL"
+  echo 'DEPLOYMENT_SCAFFOLDING=FAIL'
   exit 1
 fi
 
-echo "DEPLOYMENT_SCAFFOLDING=PASS"
-echo "REMOTE_AUTOMATIC_DEPLOYMENT=ABSENT"
-echo "RUNTIME_PATH_FINGERPRINT_GATE=PRESENT"
+echo 'DEPLOYMENT_SCAFFOLDING=PASS'
+echo 'REMOTE_AUTOMATIC_DEPLOYMENT=ABSENT'
+echo 'RUNTIME_PATH_FINGERPRINT_GATE=PRESENT'
+echo 'EXACT_RELEASE_HEAD_GATE=PRESENT'
+echo 'ROLLBACK_IMAGE_VERIFICATION=PRESENT'
+echo 'CANARY_FAILURE_APPLICATION_ROLLBACK=PRESENT'
+echo 'RUN_SCOPED_REMOTE_DOCKER_AUTH=PRESENT'
