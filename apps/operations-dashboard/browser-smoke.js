@@ -131,7 +131,10 @@ export async function runBrowserSmoke() {
       () => document.querySelector('#job-drawer')?.getAttribute('aria-hidden') === 'false',
       'new crawl drawer',
     );
-    assert(document.querySelector('#job-drawer')?.textContent.includes('manual-smoke.example/');
+    assert(
+      document.querySelector('#job-drawer')?.textContent.includes('manual-smoke.example'),
+      'new crawl simulation uses submitted targets',
+    );
     click('[data-close-drawer]', 'close new crawl drawer');
     recordCheck(checks, 'import-form-submit');
 
@@ -192,7 +195,7 @@ export async function runBrowserSmoke() {
     document.querySelector('#settings-dialog').close();
     recordCheck(checks, 'settings-dialog');
 
-    marker.textContent = `BROWSER_SMOKE=PASS\nPHECKS=${checks.join(',')}`;
+    marker.textContent = `BROWSER_SMOKE=PASS\nCHECKS=${checks.join(',')}`;
     document.documentElement.dataset.browserSmoke = 'pass';
   } catch (error) {
     marker.textContent = `BROWSER_SMOKE=FAIL\n${error instanceof Error ? error.stack || error.message : String(error)}`;
