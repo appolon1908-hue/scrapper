@@ -5,6 +5,7 @@ on:
     paths:
       - 'apps/operations-dashboard/**'
       - 'docs/design/OPERATIONS_DASHBOARD.md'
+      - 'docs/design/OPERATIONS_DASHBOARD_INTERACTION_AUDIT.md'
       - '.github/workflows/dashboard-ci.yml'
   push:
     branches:
@@ -12,6 +13,7 @@ on:
     paths:
       - 'apps/operations-dashboard/**'
       - 'docs/design/OPERATIONS_DASHBOARD.md'
+      - 'docs/design/OPERATIONS_DASHBOARD_INTERACTION_AUDIT.md'
       - '.github/workflows/dashboard-ci.yml'
 
 permissions:
@@ -41,21 +43,47 @@ jobs:
       - name: Run dashboard unit and API contract tests
         run: npm --prefix apps/operations-dashboard test
 
-      - name: Smoke-test the static dashboard server
+      - name: Smoke-test static serving and browser interactions
         shell: bash
         run: |
           set -euo pipefail
           npm --prefix apps/operations-dashboard run serve > /tmp/dashboard-server.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+
           for _ in $(seq 1 20); do
             if curl --fail --silent --show-error http://127.0.0.1:4173/ >/tmp/dashboard-index.html; then
               break
             fi
             sleep 1
           done
+
           grep -Fq 'Codestra Crawler Control' /tmp/dashboard-index.html
           curl --fail --silent --show-error http://127.0.0.1:4173/config.js \
             | grep -Fq 'writeControlsEnabled: false'
-          curl --fail --silent --show-error --head http://127.0.0.1:4173/app.js \
+          curl --fail --silent --show-error --head http://127.0.0.1:4173/app-v2.js \
             | grep -Eqi '^x-content-type-options:[[:space:]]*nosniff'
+
+          chrome_binary="$(
+            command -v google-chrome ||
+            command -v google-chrome-stable ||
+            command -v chromium ||
+            command -v chromium-browser
+          )"
+          test -n "$chrome_binary"
+
+          "$chrome_binary" \
+            --headless=new \
+            --no-sandbox \
+            --disable-gpu \
+            --disable-dev-shm-usage \
+            --virtual-time-budget=10000 \
+            --dump-dom \
+            'http://127.0.0.1:4173/?browser-smoke=1' \
+            > /tmp/dashboard-browser-smoke.html
+
+          grep -Fq 'BROWSER_SMOKE=PASS' /tmp/dashboard-browser-smoke.html
+          grep -Fq 'job-search-filter-drawer' /tmp/dashboard-browser-smoke.html
+          grep -Fq 'import-form-submit' /tmp/dashboard-browser-smoke.html
+          grep -Fq 'result-search-filter-drawer-export-empty' /tmp/dashboard-browser-smoke.html
+          grep -Fq 'diagnostics-data-states' /tmp/dashboard-browser-smoke.html
