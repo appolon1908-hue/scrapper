@@ -7,9 +7,7 @@ on:
         description: Runtime environment to inspect
         required: true
         type: choice
-        options:
-          - staging
-          - production
+        options: [staging, production]
       runtime_root:
         description: Existing application runtime root to inspect
         required: true
@@ -52,6 +50,8 @@ jobs:
       EXPECTED_API_PORT: ${{ inputs.expected_api_port }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Validate read-only audit inputs
         shell: bash
@@ -64,7 +64,8 @@ jobs:
           [[ "$RUNTIME_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
           for path in "$RUNTIME_ROOT" "$RUNTIME_ENV_FILE" "$RUNTIME_SECRETS_ROOT"; do
             [[ "$path" =~ ^/[A-Za-z0-9._/-]+$ ]]
-            [[ "$path" != "/" && "$path" != *"//"* && "$path" != *"/../"* && "$path" != *"/./"* ]]
+            [[ "$path" != "/" && "$path" != *"//"* && "$path" != *"/../"* &&
+               "$path" != *"/./"* && "$path" != */.. && "$path" != */. ]]
           done
           [[ "$EXPECTED_API_PORT" =~ ^[0-9]{1,5}$ ]]
           (( EXPECTED_API_PORT >= 1 && EXPECTED_API_PORT <= 65535 ))
@@ -113,15 +114,13 @@ jobs:
           fingerprint="$(sha256sum runtime-evidence/runtime-contract.txt | awk '{print $1}')"
           echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
 
-          TARGET="${{ inputs.target }}" \
-          SOURCE_SHA="$GITHUB_SHA" \
-          FINGERPRINT="$fingerprint" \
+          TARGET="${{ inputs.target }}" SOURCE_SHA="$GITHUB_SHA" FINGERPRINT="$fingerprint" \
           python3 - <<'PY'
           import json
           import os
           from pathlib import Path
 
-          def parse_section(path: Path, begin: str, end: str) -> dict[str, str]:
+          def section(path: Path, begin: str, end: str) -> dict[str, str]:
               result: dict[str, str] = {}
               active = False
               for raw in path.read_text(encoding="utf-8").splitlines():
@@ -142,8 +141,8 @@ jobs:
               "target": os.environ["TARGET"],
               "source_sha": os.environ["SOURCE_SHA"],
               "runtime_fingerprint": os.environ["FINGERPRINT"],
-              "contract": parse_section(observation, "BEGIN_CONTRACT", "END_CONTRACT"),
-              "observations": parse_section(observation, "BEGIN_OBSERVATIONS", "END_OBSERVATIONS"),
+              "contract": section(observation, "BEGIN_CONTRACT", "END_CONTRACT"),
+              "observations": section(observation, "BEGIN_OBSERVATIONS", "END_OBSERVATIONS"),
               "server_modified": False,
           }
           Path("runtime-evidence/runtime-path-contract.json").write_text(
@@ -170,5 +169,5 @@ jobs:
             echo '- Fingerprint: `${{ steps.contract.outputs.fingerprint }}`'
             echo '- Server modified: `false`'
             echo
-            echo 'Use the exact fingerprint as a deployment workflow input only after reviewing the artifact.'
+            echo 'Use this fingerprint only after the complete artifact is reviewed.'
           } >> "$GITHUB_STEP_SUMMARY"
