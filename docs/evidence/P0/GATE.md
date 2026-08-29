@@ -13,7 +13,7 @@ PRODUCTION_DEPLOYED: NO
 EXTERNAL_DELIVERY_ENABLED: NO
 GO_LIVE: NO_GO
 ROLLBACK_REHEARSED: YES
-BLOCKERS: none
+BLOCKERS: P0-T5 squash merge is incompatible with ancestry-gated legacy branch deletion; see docs/BLOCKERS.md
 ```
 
 ## Measured evidence
@@ -29,4 +29,4 @@ BLOCKERS: none
 - Authorization controls: every source receives one of the four allowed authorization bases; blocked and ToS-prohibited domain policies are enforced before crawl navigation.
 - External-effect state: all existing external-effect capabilities remain disabled by default.
 
-No staging or production deployment is claimed by this gate.
+No staging or production deployment is claimed by this gate. Gate 0 remains blocked until the Git-history policy conflict in `docs/BLOCKERS.md` is resolved.
