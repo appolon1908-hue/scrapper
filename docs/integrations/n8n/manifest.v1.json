@@ -2,8 +2,8 @@
   "schema_version": "1.0",
   "system": "kyqra-crawler",
   "repository": "appolon1908-hue/scrapper",
-  "base_branch": "hardening/runtime-path-deployment-gates",
-  "branch": "integration/n8n-crawler-automation-v2-20260827",
+  "base_branch": "main",
+  "branch": "main",
   "authority": "crawler-job-and-result-system-of-record",
   "integration_boundary": "codestra-middleware-only",
   "n8n": {

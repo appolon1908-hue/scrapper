@@ -19,7 +19,7 @@ BLOCKERS: none
 
 ## Measured evidence
 
-- Baseline: `75fc233`, the tip of `feature/turnkey-control-plane-dashboard-v1` at reconciliation start.
+- Baseline: commit `75fc233` at reconciliation start. Its historical branch identity remains in the sealed branch-test matrix.
 - Tracked files: 165; TypeScript source files under `src/`: 42.
 - `npm run check`: PASS — lint, typecheck, 28 unit tests, and format check passed.
 - `npm run test:integration`: PASS — 8 tests passed against disposable PostgreSQL 17.11 and a Redis 7-compatible Memurai 4.1.7 runtime.

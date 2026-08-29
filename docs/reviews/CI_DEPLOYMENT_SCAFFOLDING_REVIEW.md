@@ -1,8 +1,10 @@
 # CI and deployment scaffolding security review
 
-Date: 2026-08-27  
-Review branch: `hardening/runtime-path-deployment-gates`  
-Base: `release/production-readiness-20260826`
+Date: 2026-08-27
+
+Review lineage: preserved on `main` by Gate 0 reconciliation
+
+Current authority: historical source evidence only; deployment is blocked in this repository
 
 ## Decision
 

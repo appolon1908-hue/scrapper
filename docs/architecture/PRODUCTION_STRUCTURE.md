@@ -1,4 +1,8 @@
-# Production structure
+# Preserved production-oriented source structure
+
+This document describes source boundaries retained for parity review. It is not a deployment
+plan: `appolon1908-hue/kyqra-crawler` is the canonical crawler authority, and this legacy
+repository cannot be activated as a competing runtime.
 
 ## Dependency direction
 
@@ -18,18 +22,18 @@ command orchestration. Domain modules remain independent of Fastify, PostgreSQL
 and BullMQ. Persistence modules are grouped by responsibility behind the
 `Repository` compatibility facade.
 
-## Branch boundaries
+## Review boundaries
 
-Heavy capabilities must remain independent review branches based on the modular
-core:
+If a parity review selects capability source for migration, keep these responsibilities in
+independent changes in the canonical repository:
 
-1. `refactor/modular-production-core`
-2. `feature/admin-search-export-api`
-3. `integration/n8n-durable-inbox-webhooks`
-4. `integration/odoo-crm-projection`
-5. `feature/discovery-registry-connectors`
-6. `feature/vue-admin-console`
-7. `hardening/kong-caddy-release-controls`
+1. modular crawler core;
+2. admin, search, and export API;
+3. durable n8n inbox and webhook handling;
+4. Odoo CRM projection;
+5. discovery and registry connectors;
+6. admin console; and
+7. gateway and release controls.
 
 Do not combine UI, reverse webhooks, Odoo mapping, discovery providers and
 production activation in one pull request.
@@ -51,3 +55,6 @@ production activation in one pull request.
 No branch name, README text, green compile, or Dockerfile is proof of a live
 deployment. Production requires an immutable image digest, a reviewed manifest,
 staging evidence, rollback proof and explicit approval.
+
+Those release gates belong to `appolon1908-hue/kyqra-crawler`. Deployment workflows retained
+in this repository are blocked and exist only as source evidence for the parity review.
