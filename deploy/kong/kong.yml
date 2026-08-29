@@ -34,7 +34,7 @@ services:
 
       - name: codestra-scrapper-service-info
         paths:
-          - '~^/$'
+          - '~/$'
         strip_path: false
         preserve_host: true
         methods: [GET]

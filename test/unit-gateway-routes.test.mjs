@@ -11,7 +11,7 @@ test('production Kong exposes the implemented platform-admin and service-info ro
   assert.match(productionKong, /^      - name: codestra-scrapper-platform-admin$/m);
   assert.match(productionKong, /^          - \/platform\/v2$/m);
   assert.match(productionKong, /^      - name: codestra-scrapper-service-info$/m);
-  assert.match(productionKong, /^          - '~\^\/\$'$/m);
+  assert.match(productionKong, /^          - '~\/\$'$/m);
   assert.match(productionKong, /^        methods: \[GET\]$/m);
 });
 
@@ -25,7 +25,7 @@ test('gateway validation covers the corrected route surface and production confi
     assert.match(validationKong, new RegExp(`^          - ${escapedPath}$`, 'm'));
   }
 
-  assert.match(validationKong, /^          - '~\^\/\$'$/m);
+  assert.match(validationKong, /^          - '~\/\$'$/m);
   assert.match(validationCaddy, /@scrapper_api path .* \/platform\/v2 \/platform\/v2\/\*/);
   assert.match(gatewayValidation, /kong config parse \/kong\/production\.kong\.yml/);
   assert.match(gatewayValidation, /https:\/\/localhost:8443\/platform\/v2\/tenants/);

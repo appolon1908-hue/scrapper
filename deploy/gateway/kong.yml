@@ -16,7 +16,7 @@ services:
           - /healthz
           - /readyz
           - /openapi.yaml
-          - '~^/$'
+          - '~/$'
         strip_path: false
         preserve_host: true
         methods:
