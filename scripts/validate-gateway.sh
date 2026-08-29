@@ -67,6 +67,15 @@ if ! "${COMPOSE[@]}" run --rm --no-deps kong kong config parse /kong/kong.yml; t
   show_failure
   exit 1
 fi
+if ! "${COMPOSE[@]}" run --rm --no-deps kong kong config parse /kong/production.kong.yml; then
+  echo 'ERROR: production Kong declarative configuration is invalid' >&2
+  show_failure
+  exit 1
+fi
+if grep -Fq -- '/api/v2/webhooks' "${ROOT_DIR}/deploy/kong/kong.yml"; then
+  echo 'ERROR: production Kong still declares the unimplemented /api/v2/webhooks route' >&2
+  exit 1
+fi
 
 if ! "${COMPOSE[@]}" up -d mock-api kong; then
   echo 'ERROR: Kong validation services did not start' >&2
@@ -142,6 +151,22 @@ trusted_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
   https://localhost:8443/api/v2/health)"
 [[ "${trusted_status}" == '200' ]]
 
+service_info_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  --cacert "${CERT_DIR}/ca.crt" \
+  --cert "${CERT_DIR}/client.crt" \
+  --key "${CERT_DIR}/client.key" \
+  -H 'x-client-id: service-info-test' \
+  https://localhost:8443/)"
+[[ "${service_info_status}" == '200' ]]
+
+platform_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  --cacert "${CERT_DIR}/ca.crt" \
+  --cert "${CERT_DIR}/client.crt" \
+  --key "${CERT_DIR}/client.key" \
+  -H 'x-client-id: platform-admin-test' \
+  https://localhost:8443/platform/v2/tenants)"
+[[ "${platform_status}" == '200' ]]
+
 outside_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
   --cacert "${CERT_DIR}/ca.crt" \
   --cert "${CERT_DIR}/client.crt" \
@@ -196,6 +221,9 @@ cat > "${EVIDENCE_DIR}/gateway-validation.json" <<EOF
   "mtls_required": "pass",
   "untrusted_client_rejected": "pass",
   "kong_caddy_route": "pass",
+  "service_info_route": "pass",
+  "platform_admin_route": "pass",
+  "unimplemented_webhook_route_absent": "pass",
   "private_path_denied": "pass",
   "rate_limit_429": "pass",
   "request_size_413": "pass",

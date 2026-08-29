@@ -9,9 +9,14 @@ services:
     write_timeout: 15000
     retries: 0
     routes:
-      - name: codestra-scrapper-v2
+      - name: codestra-scrapper-routed-surface
         paths:
           - /api/v2
+          - /platform/v2
+          - /healthz
+          - /readyz
+          - /openapi.yaml
+          - '~^/$'
         strip_path: false
         preserve_host: true
         methods:

@@ -12,7 +12,6 @@ services:
       - name: codestra-scrapper-private-integrations
         paths:
           - /api/v2/inbox
-          - /api/v2/webhooks
         strip_path: false
         preserve_host: true
         protocols: [http, https]
@@ -24,6 +23,22 @@ services:
                 - 127.0.0.1/32
               status: 403
               message: integration_source_not_allowlisted
+
+      - name: codestra-scrapper-platform-admin
+        paths:
+          - /platform/v2
+        strip_path: false
+        preserve_host: true
+        methods: [GET, POST]
+        protocols: [http, https]
+
+      - name: codestra-scrapper-service-info
+        paths:
+          - '~^/$'
+        strip_path: false
+        preserve_host: true
+        methods: [GET]
+        protocols: [http, https]
 
       - name: codestra-scrapper-public-api
         paths:

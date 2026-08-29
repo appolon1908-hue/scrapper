@@ -30,6 +30,7 @@ services:
       KONG_LOG_LEVEL: notice
     volumes:
       - ./kong.yml:/kong/kong.yml:ro
+      - ../kong/kong.yml:/kong/production.kong.yml:ro
     networks:
       validation:
         ipv4_address: 172.30.0.11

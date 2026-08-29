@@ -13,7 +13,7 @@
     }
   }
 
-  @scrapper_api path /api/v2 /api/v2/*
+  @scrapper_api path / /healthz /readyz /openapi.yaml /api/v2 /api/v2/* /platform/v2 /platform/v2/*
   handle @scrapper_api {
     reverse_proxy kong:8000 {
       header_up X-Forwarded-Proto https
