@@ -12,14 +12,15 @@ STAGING_DEPLOYED: NO
 PRODUCTION_DEPLOYED: NO
 EXTERNAL_DELIVERY_ENABLED: NO
 GO_LIVE: NO_GO
-ROLLBACK_REHEARSED: YES
-BLOCKERS: P0-T5 squash merge is incompatible with ancestry-gated legacy branch deletion; see docs/BLOCKERS.md
+ROLLBACK_REHEARSED: NO
+MIGRATION_ROLLBACK_VERIFIED: YES
+BLOCKERS: none
 ```
 
 ## Measured evidence
 
 - Baseline: `75fc233`, the tip of `feature/turnkey-control-plane-dashboard-v1` at reconciliation start.
-- Tracked files: 158; TypeScript source files under `src/`: 42.
+- Tracked files: 165; TypeScript source files under `src/`: 42.
 - `npm run check`: PASS — lint, typecheck, 28 unit tests, and format check passed.
 - `npm run test:integration`: PASS — 8 tests passed against disposable PostgreSQL 17.11 and a Redis 7-compatible Memurai 4.1.7 runtime.
 - Migration inventory: 6 numbered up migrations and 6 matching down migrations; no duplicate numbers.
@@ -29,6 +30,10 @@ BLOCKERS: P0-T5 squash merge is incompatible with ancestry-gated legacy branch d
 - Authorization controls: every source receives one of the four allowed authorization bases; blocked and ToS-prohibited domain policies are enforced before crawl navigation.
 - Gateway parity: Kong exposes `/platform/v2` through a dedicated route, exposes only `GET /` through an exact regex route, and no longer declares the unimplemented `/api/v2/webhooks` integration path.
 - Gateway validation: CI parses both the validation fixture and production Kong configuration, then exercises the service-info and platform-admin routes through Caddy and Kong.
+- Branch test pass: all 23 live remote branches were inventoried; all 20 unique heads were checked, with clean-install results recorded in `docs/evidence/P0/BRANCH_TEST_MATRIX.md`.
+- Content reconciliation: all 21 legacy branches and 1,662 tracked file occurrences have a verified disposition — 883 ported-identical, 8 ported-rewritten, 771 intentionally-dropped, and 0 missing.
 - External-effect state: all existing external-effect capabilities remain disabled by default.
 
-No staging or production deployment is claimed by this gate. Gate 0 remains blocked until the Git-history policy conflict in `docs/BLOCKERS.md` is resolved.
+No staging or production deployment is claimed by this gate. The Git-history policy conflict is
+resolved by the content-reconciliation amendment in `MISSION.md`; Gate 0 is ready for the
+authorized squash merge and P0-T6 cleanup.

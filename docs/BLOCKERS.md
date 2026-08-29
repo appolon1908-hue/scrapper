@@ -2,8 +2,9 @@
 
 ## P0-T5 — Squash merge cannot satisfy ancestry-gated branch deletion
 
-**Status:** blocking Gate 0  
+**Status:** resolved by mission-owner decision
 **Recorded:** 2026-08-29  
+**Resolved:** 2026-08-29
 **PR:** [#20](https://github.com/appolon1908-hue/scrapper/pull/20)
 
 The Phase 0 instructions require both of the following:
@@ -23,4 +24,12 @@ No legacy branch has been deleted. PR #20 is mergeable and all four GitHub check
 - **Preserve squash:** keep the squash merge and replace ancestry proof with a committed content/patch reconciliation manifest. This retains the requested squash history, but requires changing the deletion predicate.
 - **Retain legacy branches:** squash-merge and do not delete any branch whose ancestry check fails. This follows the deletion safety rule but leaves Gate 0 red because `main` would not be the only branch.
 
-The mission owner must select one resolution; silently weakening the proof or deleting uncontained branch tips is prohibited by Part 0.
+### Resolution
+
+The mission owner selected **Preserve squash**. Prime Directive 5 is amended in `MISSION.md` to
+require a committed content-reconciliation predicate instead of Git ancestry. The file-level
+proof is `docs/evidence/P0/RECONCILIATION_MANIFEST.md`; its verifier requires every current
+legacy branch tip and every tracked file to have one valid disposition before deletion.
+
+No branch may be deleted if its remote tip changes or the manifest verifier reports a missing or
+invalid disposition.
