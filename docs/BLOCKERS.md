@@ -33,3 +33,23 @@ legacy branch tip and every tracked file to have one valid disposition before de
 
 No branch may be deleted if its remote tip changes or the manifest verifier reports a missing or
 invalid disposition.
+
+## H0 — Scrapper feature/deployment mission targets the legacy lineage
+
+**Status:** resolved by existing repository authority records
+
+**Recorded:** 2026-08-29
+
+**Resolution:** Branch B — legacy Kyqra lineage
+
+`docs/integrations/n8n/CANONICAL_RUNTIME_HANDOFF.md` and
+`docs/integrations/n8n/canonical-runtime.v2.json` identify
+`appolon1908-hue/kyqra-crawler` as the canonical crawler source and future runtime authority.
+The target repository independently declares the same authority. Continuing the post-Gate-0
+Scrapper mission here would create the competing API, job ledger, credential set, workflow
+family, and runtime that the handoff explicitly prohibits.
+
+The decision is now normalized in `docs/architecture/CANONICAL_REPOSITORY.md` and `MISSION.md`.
+This repository receives identity and stale-lineage cleanup only. A replacement mission must be
+scoped to `kyqra-crawler` after a source-and-contract parity review; no runtime or production
+state was changed by this resolution.

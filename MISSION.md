@@ -45,3 +45,18 @@ P0-T6 is authorized only after all of the following are true:
 
 This amendment replaces the former ancestry predicate only. It does not weaken the deployment,
 testing, legal-authorization, or fail-closed requirements.
+
+## H0 — Canonical repository resolution
+
+The repository-identity decision is **legacy Kyqra lineage**. The authoritative decision is
+recorded in `docs/architecture/CANONICAL_REPOSITORY.md`:
+
+- `appolon1908-hue/kyqra-crawler` is the canonical crawler source and future runtime authority;
+- `appolon1908-hue/scrapper` is preserved migration evidence, not a separate production system;
+- the original Scrapper mission's feature and deployment phases after Gate 0 are superseded for
+  this repository and **must not run here**; and
+- a replacement mission may run in `kyqra-crawler` only after source-and-contract parity review.
+
+This repository is limited to the H0/H1/H2/H3 identity, trunk, lineage, and documentation
+cleanup authorized by the hardening companion. No credential, frontier, provider, staging, or
+production capability may be added or activated here.

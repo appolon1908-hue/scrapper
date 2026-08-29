@@ -1,4 +1,4 @@
-name: Configure release branch protection
+name: '[BLOCKED] Legacy Scrapper release governance'
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
       release_branch:
         description: Existing release branch to protect
         required: true
-        default: release/production-readiness-20260826
+        default: release/legacy-lineage-disabled
         type: string
       approval:
         description: Enter PROTECT followed by one space and the exact branch name
@@ -21,7 +21,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  authority_gate:
+    name: blocked-by-canonical-repository-decision
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Refuse release-governance mutation from the legacy lineage
+        shell: bash
+        run: |
+          echo 'appolon1908-hue/scrapper is preserved migration evidence and is not a release authority.' >&2
+          exit 1
+
   protect:
+    needs: authority_gate
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: release-governance

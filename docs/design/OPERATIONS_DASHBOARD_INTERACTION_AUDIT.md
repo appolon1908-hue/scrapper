@@ -1,6 +1,6 @@
 # Operations dashboard interaction audit
 
-This matrix records the behavior implemented on `feature/operations-dashboard`. It is source validation, not live-host or production evidence.
+This matrix records dashboard behavior preserved on `main` after Gate 0 reconciliation. It is source validation, not live-host or production evidence.
 
 | Area           | Interaction                                 | API or boundary                              | Implemented state evidence                                       |
 | -------------- | ------------------------------------------- | -------------------------------------------- | ---------------------------------------------------------------- |

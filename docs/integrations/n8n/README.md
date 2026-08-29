@@ -1,4 +1,4 @@
-# Scrapper/Kyqra ↔ Middleware ↔ n8n integration
+# Preserved Kyqra lineage ↔ Middleware ↔ n8n integration
 
 ## Authority
 
@@ -77,7 +77,7 @@ kyqra.crawler.retention-cleanup.v1
 ## Branch dependencies
 
 ```text
-scrapper/hardening/runtime-path-deployment-gates
+scrapper/main (preserved migration evidence only)
 Middleware-/core/integration-contracts
 Middleware-/core/event-ledger-outbox
 Middleware-/core/webhook-inbox-replay

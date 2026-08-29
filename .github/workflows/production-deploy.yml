@@ -1,4 +1,4 @@
-name: Production deployment
+name: '[BLOCKED] Legacy Scrapper production deployment'
 
 on:
   workflow_dispatch:
@@ -46,15 +46,27 @@ permissions:
 
 env:
   IMAGE_NAME: ghcr.io/appolon1908-hue/scrapper
-  RELEASE_BRANCH: release/production-readiness-20260826
+  RELEASE_BRANCH: release/legacy-lineage-disabled
 
 concurrency:
   group: production-deploy
   cancel-in-progress: false
 
 jobs:
+  authority_gate:
+    name: blocked-by-canonical-repository-decision
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Refuse deployment from the legacy lineage
+        shell: bash
+        run: |
+          echo 'appolon1908-hue/scrapper is preserved migration evidence and is not a deployment authority.' >&2
+          echo 'Run the reviewed deployment mission from appolon1908-hue/kyqra-crawler.' >&2
+          exit 1
+
   verify_artifact:
     name: verify-artifact
+    needs: authority_gate
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     permissions:

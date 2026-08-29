@@ -18,7 +18,7 @@ GO_LIVE=NO_GO
 
 A deployment claim requires reviewed runtime inventory, immutable image-digest evidence, write-disabled staging acceptance, canary/read-back logs, and a rehearsed rollback.
 
-## Current implemented foundation
+## Preserved implementation foundation
 
 - Authenticated crawl-job API with tenant and scope enforcement
 - PostgreSQL authority, idempotency, optimistic versioning and audit records
@@ -50,9 +50,11 @@ src/
   workers/                  # queue consumers
 ```
 
-## Not implemented yet
+## Unfinished capabilities
 
-The following are separate production workstreams, not completed features:
+The following capabilities are not completed in this lineage. They must not be built or
+activated here; any future implementation belongs in the canonical Kyqra repository after
+source-and-contract parity review:
 
 - Fully accepted admin-console workflows and calls to action
 - Durable inbound webhook/inbox processing for n8n reverse commands
@@ -64,12 +66,16 @@ The following are separate production workstreams, not completed features:
 - Immutable image publication, staging canary, rollback proof and production activation
 
 See [`docs/STATUS.md`](docs/STATUS.md),
+[`docs/architecture/CANONICAL_REPOSITORY.md`](docs/architecture/CANONICAL_REPOSITORY.md),
 [`docs/architecture/PRODUCTION_STRUCTURE.md`](docs/architecture/PRODUCTION_STRUCTURE.md), and
 [`docs/evidence/P0/GATE.md`](docs/evidence/P0/GATE.md).
 
-## Canonical crawler handoff
+## Canonical repository decision
 
-`appolon1908-hue/kyqra-crawler` is the future Codestra/Kyqra crawler runtime authority. This repository remains the active implementation lineage until Phase 10 and must not become a competing production API, job ledger, credential set, workflow family, or runtime.
+`appolon1908-hue/kyqra-crawler` is the canonical crawler source and future runtime authority.
+This repository is preserved legacy Kyqra lineage and must not become a competing production
+API, job ledger, credential set, workflow family, or runtime. The post-Gate-0 feature and
+deployment mission is not authorized to continue here.
 
 The handoff stays source-only until every cutover gate passes:
 
