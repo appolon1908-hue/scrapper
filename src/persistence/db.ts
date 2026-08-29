@@ -101,7 +101,9 @@ export async function rollbackLastMigration(
       sql = await fs.readFile(path.join(downDirectory, downFilename), 'utf8');
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
-      if (code === 'ENOENT') throw new Error(`migration_down_missing:${downFilename}`);
+      if (code === 'ENOENT') {
+        throw new Error(`migration_down_missing:${downFilename}`, { cause: error });
+      }
       throw error;
     }
 
