@@ -146,134 +146,166 @@ export async function runCrawlJob(
   const robots = new RobotsCache(config.scraperUserAgent);
   const extractions = new Map<string, PageExtraction[]>();
   const browserFallbacks = new Map<string, UserData>();
+  const domainPolicies = new Map<string, Awaited<ReturnType<Repository['domainPolicyForHost']>>>();
   const runQueueKey = `${jobId}-${runToken}`;
   const httpQueue = await RequestQueue.open(`scrapper-http-${runQueueKey}`);
 
-  const seedUrls = request.seedUrls.slice(0, request.maxCompanies);
-  for (const raw of seedUrls) {
-    await ensureContinuable();
-    const url = await assertPublicHttpUrl(raw);
-    const normalized = normalizeUrl(url.toString());
-    const host = keyForHost(url.hostname);
-    await httpQueue.addRequest({
-      url: normalized,
-      uniqueKey: normalized,
-      userData: { seedUrl: normalized, depth: 0, businessHost: host } satisfies UserData,
-    });
-  }
-
-  const saveExtraction = async (
-    extraction: PageExtraction,
-    userData: UserData,
-    statusCode?: number,
-  ): Promise<void> => {
-    const values = extractions.get(userData.businessHost) || [];
-    values.push(extraction);
-    extractions.set(userData.businessHost, values);
-    await repository.savePage({
-      tenantId: job.tenant_id,
-      jobId,
-      sourceUrl: extraction.sourceUrl,
-      canonicalUrl: extraction.canonicalUrl,
-      ...(statusCode ? { statusCode } : {}),
-      contentHash: extraction.contentHash,
-      pageTitle: extraction.pageTitle,
-      metadata: {
-        text_length: extraction.textLength,
-        email_count: extraction.emails.length,
-        phone_count: extraction.phones.length,
-        officer_count: extraction.officers.length,
-        likely_contact_page: extraction.likelyContactPage,
-      },
-    });
-  };
-
-  const httpCrawler = new CheerioCrawler({
-    requestQueue: httpQueue,
-    maxRequestsPerCrawl: request.maxPages,
-    maxRequestRetries: 1,
-    requestHandlerTimeoutSecs: 60,
-    maxConcurrency: config.httpConcurrency,
-    sameDomainDelaySecs: Math.max(1 / request.requestsPerSecond, 0.1),
-    useSessionPool: true,
-    persistCookiesPerSession: false,
-    preNavigationHooks: [
-      async ({ request: crawlerRequest }) => {
-        await ensureContinuable();
-        await assertPublicHttpUrl(crawlerRequest.url);
-        const decision = await robots.decision(crawlerRequest.url);
-        if (!decision.allowed) {
-          progress.pagesDeniedByRobots += 1;
-          throw new NonRetryableError('robots_denied');
-        }
-      },
-    ],
-    failedRequestHandler: async ({ request: failedRequest }, error) => {
-      if (String(error?.message || error).includes('robots_denied')) return;
-      progress.pagesFailed += 1;
-      log('warn', 'crawl_page_failed', {
-        jobId,
-        url: failedRequest.url,
-        error: String(error),
-      });
-    },
-    requestHandler: async ({ request: crawleeRequest, $, body, response, enqueueLinks }) => {
+  try {
+    const seedUrls = request.seedUrls.slice(0, request.maxCompanies);
+    for (const raw of seedUrls) {
       await ensureContinuable();
-      const userData = crawleeRequest.userData as UserData;
-      const loadedUrl = normalizeUrl(crawleeRequest.loadedUrl || crawleeRequest.url);
-      await assertPublicHttpUrl(loadedUrl);
-      if (!sameBusinessHost(userData.seedUrl, loadedUrl)) {
-        throw new NonRetryableError('cross_domain_redirect_rejected');
-      }
-      const html = pageHtml(() => $.html(), body);
-      if (!html) throw new NonRetryableError('empty_html');
-      const extraction = extractBusinessPage(html, loadedUrl);
-      await saveExtraction(extraction, userData, response?.statusCode);
-      progress.pagesProcessed += 1;
-
-      if (request.browser === 'auto' && extraction.requiresBrowserFallback) {
-        browserFallbacks.set(loadedUrl, userData);
-      }
-
+      const url = await assertPublicHttpUrl(raw);
+      const normalized = normalizeUrl(url.toString());
+      const host = keyForHost(url.hostname);
+      const domainPolicy = await repository.domainPolicyForHost(host);
+      domainPolicies.set(host, domainPolicy);
       if (
-        request.mode !== 'single' &&
-        userData.depth < request.maxDepth &&
-        progress.pagesProcessed < request.maxPages
+        !shouldVisitUrl(normalized, request.includePatterns, request.excludePatterns, domainPolicy)
       ) {
-        await enqueueLinks({
-          strategy: 'same-hostname',
-          transformRequestFunction: (next) => {
-            try {
-              const normalized = normalizeUrl(next.url);
-              if (
-                !sameBusinessHost(userData.seedUrl, normalized) ||
-                !shouldVisitUrl(normalized, request.includePatterns, request.excludePatterns)
-              ) {
+        log('warn', 'crawl_seed_denied_by_domain_policy', {
+          jobId,
+          host,
+          blocked: domainPolicy?.blocked ?? false,
+          tosReviewStatus: domainPolicy?.tos_review_status ?? 'unreviewed',
+        });
+        throw new NonRetryableError('domain_policy_denied');
+      }
+      await httpQueue.addRequest({
+        url: normalized,
+        uniqueKey: normalized,
+        userData: { seedUrl: normalized, depth: 0, businessHost: host } satisfies UserData,
+      });
+    }
+
+    const saveExtraction = async (
+      extraction: PageExtraction,
+      userData: UserData,
+      statusCode?: number,
+    ): Promise<void> => {
+      const values = extractions.get(userData.businessHost) || [];
+      values.push(extraction);
+      extractions.set(userData.businessHost, values);
+      await repository.savePage({
+        tenantId: job.tenant_id,
+        jobId,
+        sourceUrl: extraction.sourceUrl,
+        canonicalUrl: extraction.canonicalUrl,
+        ...(statusCode ? { statusCode } : {}),
+        contentHash: extraction.contentHash,
+        pageTitle: extraction.pageTitle,
+        metadata: {
+          text_length: extraction.textLength,
+          email_count: extraction.emails.length,
+          phone_count: extraction.phones.length,
+          officer_count: extraction.officers.length,
+          likely_contact_page: extraction.likelyContactPage,
+        },
+      });
+    };
+
+    const httpCrawler = new CheerioCrawler({
+      requestQueue: httpQueue,
+      maxRequestsPerCrawl: request.maxPages,
+      maxRequestRetries: 1,
+      requestHandlerTimeoutSecs: 60,
+      maxConcurrency: config.httpConcurrency,
+      sameDomainDelaySecs: Math.max(1 / request.requestsPerSecond, 0.1),
+      useSessionPool: true,
+      persistCookiesPerSession: false,
+      preNavigationHooks: [
+        async ({ request: crawlerRequest }) => {
+          await ensureContinuable();
+          const checked = await assertPublicHttpUrl(crawlerRequest.url);
+          const host = keyForHost(checked.hostname);
+          const domainPolicy = await repository.domainPolicyForHost(host);
+          domainPolicies.set(host, domainPolicy);
+          if (!shouldVisitUrl(checked.toString(), [], [], domainPolicy)) {
+            log('warn', 'crawl_request_denied_by_domain_policy', {
+              jobId,
+              host,
+              blocked: domainPolicy?.blocked ?? false,
+              tosReviewStatus: domainPolicy?.tos_review_status ?? 'unreviewed',
+            });
+            throw new NonRetryableError('domain_policy_denied');
+          }
+          const decision = await robots.decision(crawlerRequest.url);
+          if (!decision.allowed) {
+            progress.pagesDeniedByRobots += 1;
+            throw new NonRetryableError('robots_denied');
+          }
+        },
+      ],
+      failedRequestHandler: async ({ request: failedRequest }, error) => {
+        const failure = String(error?.message || error);
+        if (failure.includes('robots_denied') || failure.includes('domain_policy_denied')) return;
+        progress.pagesFailed += 1;
+        log('warn', 'crawl_page_failed', {
+          jobId,
+          url: failedRequest.url,
+          error: String(error),
+        });
+      },
+      requestHandler: async ({ request: crawleeRequest, $, body, response, enqueueLinks }) => {
+        await ensureContinuable();
+        const userData = crawleeRequest.userData as UserData;
+        const loadedUrl = normalizeUrl(crawleeRequest.loadedUrl || crawleeRequest.url);
+        await assertPublicHttpUrl(loadedUrl);
+        if (!sameBusinessHost(userData.seedUrl, loadedUrl)) {
+          throw new NonRetryableError('cross_domain_redirect_rejected');
+        }
+        const html = pageHtml(() => $.html(), body);
+        if (!html) throw new NonRetryableError('empty_html');
+        const extraction = extractBusinessPage(html, loadedUrl);
+        await saveExtraction(extraction, userData, response?.statusCode);
+        progress.pagesProcessed += 1;
+
+        if (request.browser === 'auto' && extraction.requiresBrowserFallback) {
+          browserFallbacks.set(loadedUrl, userData);
+        }
+
+        if (
+          request.mode !== 'single' &&
+          userData.depth < request.maxDepth &&
+          progress.pagesProcessed < request.maxPages
+        ) {
+          await enqueueLinks({
+            strategy: 'same-hostname',
+            transformRequestFunction: (next) => {
+              try {
+                const normalized = normalizeUrl(next.url);
+                if (
+                  !sameBusinessHost(userData.seedUrl, normalized) ||
+                  !shouldVisitUrl(
+                    normalized,
+                    request.includePatterns,
+                    request.excludePatterns,
+                    domainPolicies.get(userData.businessHost),
+                  )
+                ) {
+                  return false;
+                }
+                next.url = normalized;
+                next.uniqueKey = normalized;
+                next.userData = {
+                  seedUrl: userData.seedUrl,
+                  depth: userData.depth + 1,
+                  businessHost: userData.businessHost,
+                } satisfies UserData;
+                return next;
+              } catch {
                 return false;
               }
-              next.url = normalized;
-              next.uniqueKey = normalized;
-              next.userData = {
-                seedUrl: userData.seedUrl,
-                depth: userData.depth + 1,
-                businessHost: userData.businessHost,
-              } satisfies UserData;
-              return next;
-            } catch {
-              return false;
-            }
-          },
-        });
-      }
+            },
+          });
+        }
 
-      if (progress.pagesProcessed % 10 === 0) {
-        await ensureContinuable();
-        await bullJob.updateProgress(progress);
-      }
-    },
-  });
+        if (progress.pagesProcessed % 10 === 0) {
+          await ensureContinuable();
+          await bullJob.updateProgress(progress);
+        }
+      },
+    });
 
-  try {
     if (request.browser === 'playwright') {
       for (const raw of seedUrls) {
         browserFallbacks.set(normalizeUrl(raw), {
@@ -311,7 +343,19 @@ export async function runCrawlJob(
         preNavigationHooks: [
           async ({ request: browserRequest, page }) => {
             await ensureContinuable();
-            await assertPublicHttpUrl(browserRequest.url);
+            const checked = await assertPublicHttpUrl(browserRequest.url);
+            const host = keyForHost(checked.hostname);
+            const domainPolicy = await repository.domainPolicyForHost(host);
+            domainPolicies.set(host, domainPolicy);
+            if (!shouldVisitUrl(checked.toString(), [], [], domainPolicy)) {
+              log('warn', 'browser_request_denied_by_domain_policy', {
+                jobId,
+                host,
+                blocked: domainPolicy?.blocked ?? false,
+                tosReviewStatus: domainPolicy?.tos_review_status ?? 'unreviewed',
+              });
+              throw new NonRetryableError('domain_policy_denied');
+            }
             const decision = await robots.decision(browserRequest.url);
             if (!decision.allowed) throw new NonRetryableError('robots_denied');
             await page.route('**/*', async (route) => {
@@ -327,7 +371,8 @@ export async function runCrawlJob(
           },
         ],
         failedRequestHandler: async ({ request: failedRequest }, error) => {
-          if (String(error?.message || error).includes('robots_denied')) return;
+          const failure = String(error?.message || error);
+          if (failure.includes('robots_denied') || failure.includes('domain_policy_denied')) return;
           progress.pagesFailed += 1;
           log('warn', 'browser_page_failed', {
             jobId,

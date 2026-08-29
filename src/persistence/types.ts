@@ -56,6 +56,19 @@ export type BusinessResult = {
   record: BusinessRecord;
 };
 
+export type DomainPolicy = {
+  domain: string;
+  robots_posture: 'respect' | 'respect_with_exemption';
+  tos_review_status: 'unreviewed' | 'permitted' | 'prohibited' | 'licensed';
+  tos_reference: string | null;
+  max_rps: number;
+  crawl_delay_seconds: number | null;
+  requires_authentication: boolean;
+  blocked: boolean;
+  reviewed_at: Date | null;
+  reviewed_by: string | null;
+};
+
 export type AuditInput = {
   tenantId: string;
   actorId: string;

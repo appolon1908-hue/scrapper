@@ -5,11 +5,18 @@ import type {
   ResultListQuery,
 } from '../domain/schemas.js';
 import { BusinessRepository, type SavePageInput } from './business-repository.js';
+import { DomainPolicyRepository } from './domain-policy-repository.js';
 import { JobRepository } from './job-repository.js';
 import { LifecycleRepository } from './lifecycle-repository.js';
 import { OperationsRepository } from './operations-repository.js';
 import { OutboxRepository } from './outbox-repository.js';
-import type { CreateJobInput, JobRecord, OutboxEvent, QueuedJobDispatch } from './types.js';
+import type {
+  CreateJobInput,
+  DomainPolicy,
+  JobRecord,
+  OutboxEvent,
+  QueuedJobDispatch,
+} from './types.js';
 
 export type { CreateJobInput, JobRecord, OutboxEvent, QueuedJobDispatch } from './types.js';
 
@@ -20,6 +27,7 @@ export class Repository {
     private readonly lifecycle = new LifecycleRepository(),
     private readonly outbox = new OutboxRepository(),
     private readonly operations = new OperationsRepository(),
+    private readonly domainPolicies = new DomainPolicyRepository(),
   ) {}
 
   createJob(input: CreateJobInput): Promise<{ job: JobRecord; duplicate: boolean }> {
@@ -149,5 +157,9 @@ export class Repository {
 
   retentionSweep(): Promise<{ pages: number; jobs: number }> {
     return this.operations.retentionSweep();
+  }
+
+  domainPolicyForHost(hostname: string): Promise<DomainPolicy | null> {
+    return this.domainPolicies.getForHost(hostname);
   }
 }

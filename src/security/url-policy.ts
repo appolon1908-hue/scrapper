@@ -1,5 +1,6 @@
 import dns from 'node:dns/promises';
 import net from 'node:net';
+import type { DomainPolicy } from '../persistence/types.js';
 
 const TRACKING_KEYS = new Set([
   'utm_source',
@@ -102,7 +103,9 @@ export function shouldVisitUrl(
   url: string,
   includePatterns: string[],
   excludePatterns: string[],
+  domainPolicy?: Pick<DomainPolicy, 'blocked' | 'tos_review_status'> | null,
 ): boolean {
+  if (domainPolicy?.blocked || domainPolicy?.tos_review_status === 'prohibited') return false;
   const value = url.toLowerCase();
   if (excludePatterns.some((pattern) => value.includes(pattern.toLowerCase()))) return false;
   if (includePatterns.length > 0) {
