@@ -1,0 +1,46 @@
+_format_version: '3.0'
+_transform: true
+
+services:
+  - name: codestra-scrapper-api
+    url: http://mock-api:8080
+    connect_timeout: 5000
+    read_timeout: 15000
+    write_timeout: 15000
+    retries: 0
+    routes:
+      - name: codestra-scrapper-routed-surface
+        paths:
+          - /api/v2
+          - /platform/v2
+          - /healthz
+          - /readyz
+          - /openapi.yaml
+          - '~/$'
+        strip_path: false
+        preserve_host: true
+        methods:
+          - GET
+          - POST
+          - OPTIONS
+        protocols:
+          - http
+        plugins:
+          - name: ip-restriction
+            config:
+              allow:
+                - 172.30.0.10/32
+              status: 403
+              message: ingress_not_allowlisted
+          - name: rate-limiting
+            config:
+              second: 3
+              policy: local
+              limit_by: header
+              header_name: x-client-id
+              fault_tolerant: false
+              hide_client_headers: false
+          - name: request-size-limiting
+            config:
+              allowed_payload_size: 1
+              size_unit: megabytes

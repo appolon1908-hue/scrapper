@@ -1,0 +1,145 @@
+name: codestra-business-scrapper
+
+x-app: &app
+  image: '${SCRAPPER_IMAGE:?set an immutable image reference containing @sha256}'
+  env_file: '${SCRAPPER_ENV_FILE:-.env}'
+  environment:
+    DATABASE_URL_FILE: /run/secrets/database_url
+    REDIS_URL: redis://redis:6379
+  secrets: [database_url]
+  restart: unless-stopped
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs:
+    - /tmp:size=512m,mode=1777
+    - /app/storage:size=2g,uid=1000,gid=1000,mode=0700
+  networks: [backend]
+
+services:
+  migrate:
+    <<: *app
+    restart: 'no'
+    command: [node, dist/migrate.js]
+    environment:
+      DATABASE_URL_FILE: /run/secrets/database_url
+      REDIS_URL: redis://redis:6379
+      ROLE: migrate
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    <<: *app
+    environment:
+      DATABASE_URL_FILE: /run/secrets/database_url
+      REDIS_URL: redis://redis:6379
+      ROLE: api
+      SERVICE_PRINCIPALS_FILE: /run/secrets/service_principals
+    secrets: [database_url, service_principals]
+    ports: ['127.0.0.1:${SCRAPPER_BIND_PORT:-3200}:3000']
+    networks: [backend, ingress]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+    mem_limit: 1g
+    cpus: 2
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:3000/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  crawl-worker:
+    <<: *app
+    environment:
+      DATABASE_URL_FILE: /run/secrets/database_url
+      REDIS_URL: redis://redis:6379
+      ROLE: crawl-worker
+      EIN_FINGERPRINT_PEPPER_FILE: /run/secrets/ein_fingerprint_pepper
+    secrets: [database_url, ein_fingerprint_pepper]
+    networks: [backend, egress]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+    shm_size: 1gb
+    mem_limit: 8g
+    cpus: 6
+
+  delivery-worker:
+    <<: *app
+    environment:
+      DATABASE_URL_FILE: /run/secrets/database_url
+      REDIS_URL: redis://redis:6379
+      ROLE: delivery-worker
+      OUTBOUND_HMAC_SECRET_FILE: /run/secrets/outbound_hmac
+      OUTBOUND_BEARER_TOKEN_FILE: /run/secrets/middleware_token
+      OUTBOUND_CA_FILE: /run/secrets/middleware_ca
+      OUTBOUND_CLIENT_CERT_FILE: /run/secrets/client_cert
+      OUTBOUND_CLIENT_KEY_FILE: /run/secrets/client_key
+    secrets: [database_url, outbound_hmac, middleware_token, middleware_ca, client_cert, client_key]
+    networks: [backend, egress]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+    mem_limit: 512m
+    cpus: 1
+
+  redis:
+    image: redis:7.4-alpine@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
+    command: [redis-server, --appendonly, 'yes', --maxmemory, 2gb, --maxmemory-policy, noeviction]
+    volumes: [redis-data:/data]
+    networks: [backend]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp:size=64m, mode=1777]
+    mem_limit: 3g
+    healthcheck: { test: [CMD, redis-cli, ping], interval: 10s, timeout: 3s, retries: 5 }
+
+  postgres:
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+    environment:
+      POSTGRES_USER: scrapper
+      POSTGRES_DB: scrapper
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    networks: [backend]
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 3g
+    healthcheck:
+      { test: [CMD-SHELL, pg_isready -U scrapper], interval: 10s, timeout: 3s, retries: 5 }
+
+networks:
+  backend: { internal: true }
+  ingress: {}
+  egress: {}
+
+volumes:
+  redis-data:
+  postgres-data:
+
+secrets:
+  database_url: { file: '${DATABASE_URL_FILE:?set database URL secret path}' }
+  postgres_password: { file: '${POSTGRES_PASSWORD_FILE:?set PostgreSQL password secret path}' }
+  service_principals: { file: '${SERVICE_PRINCIPALS_FILE:?set service principal registry path}' }
+  ein_fingerprint_pepper: { file: '${EIN_FINGERPRINT_PEPPER_FILE:?set EIN pepper secret path}' }
+  outbound_hmac: { file: '${OUTBOUND_HMAC_SECRET_FILE:?set outbound HMAC secret path}' }
+  middleware_token: { file: '${OUTBOUND_BEARER_TOKEN_FILE:?set middleware token secret path}' }
+  middleware_ca: { file: '${OUTBOUND_CA_FILE:?set middleware CA path}' }
+  client_cert: { file: '${OUTBOUND_CLIENT_CERT_FILE:?set client certificate path}' }
+  client_key: { file: '${OUTBOUND_CLIENT_KEY_FILE:?set client key path}' }

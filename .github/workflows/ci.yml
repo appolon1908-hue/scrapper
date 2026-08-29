@@ -1,0 +1,147 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - 'release/**'
+      - 'feature/**'
+      - 'integration/**'
+      - 'hardening/**'
+      - 'refactor/**'
+      - 'ops/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deployment-policy:
+    name: deployment-policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Validate workflow and deployment safety policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruby -c scripts/validate-workflow-policy.rb
+          bash -n \
+            scripts/runtime-path-inventory.sh \
+            scripts/verify-release-context.sh \
+            scripts/verify-release-image.sh \
+            scripts/validate-deployment-scaffolding.sh \
+            scripts/deploy-staging.sh \
+            scripts/rollback-staging.sh \
+            scripts/deploy-production.sh \
+            scripts/rollback-production.sh
+          shellcheck -S error \
+            scripts/runtime-path-inventory.sh \
+            scripts/verify-release-context.sh \
+            scripts/verify-release-image.sh \
+            scripts/validate-deployment-scaffolding.sh \
+            scripts/deploy-staging.sh \
+            scripts/rollback-staging.sh \
+            scripts/deploy-production.sh \
+            scripts/rollback-production.sh
+          ruby scripts/validate-workflow-policy.rb
+          bash scripts/validate-deployment-scaffolding.sh
+
+  validate:
+    name: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+        env:
+          POSTGRES_USER: scrapper
+          POSTGRES_PASSWORD: scrapper
+          POSTGRES_DB: scrapper
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U scrapper -d scrapper"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7.4-alpine@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      NODE_ENV: test
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      DATABASE_URL: postgresql://scrapper:scrapper@127.0.0.1:5432/scrapper
+      REDIS_URL: redis://127.0.0.1:6379
+      SERVICE_PRINCIPALS_FILE: test/fixtures-service-principals.json
+      EIN_FINGERPRINT_PEPPER: test-only-pepper
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.16.0'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci --include=dev --ignore-scripts --no-audit --no-fund
+
+      - name: Lint, typecheck, build and unit contracts
+        run: |
+          npm run lint
+          npm run typecheck
+          npm run build
+          node --test test/unit-*.test.mjs
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=critical
+
+      - name: Run real PostgreSQL, Redis, migration and replay tests
+        run: npm run test:integration
+
+      - name: Build production container
+        run: docker build --tag codestra-scrapper:ci .
+
+      - name: Validate Compose deployment model
+        env:
+          SCRAPPER_IMAGE: ghcr.io/appolon1908-hue/scrapper@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          SCRAPPER_ENV_FILE: /dev/null
+          DATABASE_URL_FILE: .ci/database_url
+          POSTGRES_PASSWORD_FILE: .ci/postgres_password
+          SERVICE_PRINCIPALS_FILE: .ci/service_principals
+          EIN_FINGERPRINT_PEPPER_FILE: .ci/ein_fingerprint_pepper
+          OUTBOUND_HMAC_SECRET_FILE: .ci/outbound_hmac
+          OUTBOUND_BEARER_TOKEN_FILE: .ci/middleware_token
+          OUTBOUND_CA_FILE: .ci/middleware_ca
+          OUTBOUND_CLIENT_CERT_FILE: .ci/client_cert
+          OUTBOUND_CLIENT_KEY_FILE: .ci/client_key
+        run: |
+          set -euo pipefail
+          mkdir -p .ci
+          printf '%s' 'postgresql://scrapper:test@postgres:5432/scrapper' > .ci/database_url
+          printf '%s' 'test-password' > .ci/postgres_password
+          cp test/fixtures-service-principals.json .ci/service_principals
+          printf '%s' 'test-ein-pepper' > .ci/ein_fingerprint_pepper
+          printf '%s' 'test-hmac' > .ci/outbound_hmac
+          printf '%s' 'test-token' > .ci/middleware_token
+          : > .ci/middleware_ca
+          : > .ci/client_cert
+          : > .ci/client_key
+          docker compose config --quiet

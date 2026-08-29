@@ -1,0 +1,101 @@
+name: Operations dashboard validation
+
+on:
+  pull_request:
+    paths:
+      - 'apps/operations-dashboard/**'
+      - 'docs/design/OPERATIONS_DASHBOARD.md'
+      - 'docs/design/OPERATIONS_DASHBOARD_INTERACTION_AUDIT.md'
+      - '.github/workflows/dashboard-ci.yml'
+  push:
+    branches:
+      - 'feature/**'
+    paths:
+      - 'apps/operations-dashboard/**'
+      - 'docs/design/OPERATIONS_DASHBOARD.md'
+      - 'docs/design/OPERATIONS_DASHBOARD_INTERACTION_AUDIT.md'
+      - '.github/workflows/dashboard-ci.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dashboard-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dashboard:
+    name: dashboard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.16.0'
+
+      - name: Validate dashboard source and budgets
+        run: npm --prefix apps/operations-dashboard run check
+
+      - name: Run dashboard unit and API contract tests
+        run: npm --prefix apps/operations-dashboard test
+
+      - name: Smoke-test static serving and browser interactions
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --prefix apps/operations-dashboard run serve > /tmp/dashboard-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+
+          for _ in $(seq 1 20); do
+            if curl --fail --silent --show-error http://127.0.0.1:4173/ >/tmp/dashboard-index.html; then
+              break
+            fi
+            sleep 1
+          done
+
+          grep -Fq 'Codestra Crawler Control' /tmp/dashboard-index.html
+          curl --fail --silent --show-error http://127.0.0.1:4173/config.js \
+            | grep -Fq 'writeControlsEnabled: false'
+          curl --fail --silent --show-error --head http://127.0.0.1:4173/app-v2.js \
+            | grep -Eqi '^x-content-type-options:[[:space:]]*nosniff'
+
+          chrome_binary="$(
+            command -v google-chrome ||
+            command -v google-chrome-stable ||
+            command -v chromium ||
+            command -v chromium-browser
+          )"
+          test -n "$chrome_binary"
+
+          "$chrome_binary" \
+            --headless=new \
+            --no-sandbox \
+            --disable-gpu \
+            --disable-dev-shm-usage \
+            --disable-background-networking \
+            --disable-extensions \
+            --no-first-run \
+            --no-default-browser-check \
+            --virtual-time-budget=12000 \
+            --dump-dom \
+            'http://127.0.0.1:4173/?browser-smoke=1' \
+            > /tmp/dashboard-browser-smoke.html
+
+          if ! grep -Fq 'BROWSER_SMOKE=PASS' /tmp/dashboard-browser-smoke.html; then
+            echo '===== BROWSER SMOKE FAILURE ====='
+            grep -n -A30 -B5 'BROWSER_SMOKE=' /tmp/dashboard-browser-smoke.html || true
+            grep -o 'data-browser-smoke="[^"]*"' /tmp/dashboard-browser-smoke.html || true
+            echo '===== DOM TAIL ====='
+            tail -200 /tmp/dashboard-browser-smoke.html || true
+            exit 1
+          fi
+
+          grep -Fq 'job-search-filter-drawer' /tmp/dashboard-browser-smoke.html
+          grep -Fq 'import-form-submit' /tmp/dashboard-browser-smoke.html
+          grep -Fq 'result-search-filter-drawer-export-empty' /tmp/dashboard-browser-smoke.html
+          grep -Fq 'diagnostics-data-states' /tmp/dashboard-browser-smoke.html

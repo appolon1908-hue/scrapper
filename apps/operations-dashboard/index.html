@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Codestra Crawler Control — a capability-aware operations dashboard for bounded business crawl workloads."
+    />
+    <title>Codestra Crawler Control</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./enhancements.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#view">Skip to dashboard content</a>
+
+    <div class="dashboard-shell" id="dashboard-shell">
+      <aside class="sidebar" id="sidebar" aria-label="Primary navigation">
+        <div class="brand">
+          <span class="brand__mark" aria-hidden="true">C</span>
+          <span class="brand__copy">
+            <strong>Codestra</strong>
+            <small>Crawler Control</small>
+          </span>
+        </div>
+
+        <nav class="navigation" id="navigation" aria-label="Dashboard sections"></nav>
+
+        <div class="sidebar__footer">
+          <div class="environment-card">
+            <span class="environment-card__indicator" aria-hidden="true"></span>
+            <div>
+              <strong id="environment-label">Review preview</strong>
+              <span id="environment-detail">No live runtime assumed</span>
+            </div>
+          </div>
+          <button class="sidebar-settings" type="button" data-open-settings>
+            <span aria-hidden="true">⚙</span>
+            Connection settings
+          </button>
+        </div>
+      </aside>
+
+      <button
+        class="sidebar-backdrop"
+        id="sidebar-backdrop"
+        type="button"
+        aria-label="Close navigation"
+        data-close-mobile-nav
+      ></button>
+
+      <div class="app-shell">
+        <header class="topbar">
+          <div class="topbar__left">
+            <button
+              class="icon-button mobile-menu"
+              id="mobile-menu"
+              type="button"
+              aria-controls="sidebar"
+              aria-expanded="false"
+              aria-label="Open navigation"
+              data-open-mobile-nav
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <div>
+              <span class="topbar__context" id="topbar-context">Operations</span>
+              <strong class="topbar__title" id="topbar-title">Overview</strong>
+            </div>
+          </div>
+
+          <div class="topbar__right">
+            <div class="connection-pill" id="connection-pill" role="status">
+              <span class="connection-pill__dot" aria-hidden="true"></span>
+              <span id="connection-copy">Design preview</span>
+            </div>
+            <button
+              class="icon-button"
+              type="button"
+              aria-label="Connection settings"
+              data-open-settings
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="3" />
+                <path
+                  d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.6v-.1a1.7 1.7 0 0 0-1.1-1.55 1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3V9.6h.1A1.7 1.7 0 0 0 4.65 8.5a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.1A1.7 1.7 0 0 0 15.5 4.65a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.37.3.59.7.6 1.1v.3h.1v4h-.1c-.4.01-.8.23-1.1.6Z"
+                />
+              </svg>
+            </button>
+          </div>
+        </header>
+
+        <main class="main-content" id="view" tabindex="-1"></main>
+      </div>
+    </div>
+
+    <button
+      class="drawer-overlay"
+      id="drawer-overlay"
+      type="button"
+      aria-label="Close details"
+      aria-hidden="true"
+    ></button>
+    <aside
+      class="drawer"
+      id="job-drawer"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Dashboard details"
+      aria-hidden="true"
+      tabindex="-1"
+    ></aside>
+
+    <dialog class="settings-dialog" id="settings-dialog" aria-labelledby="settings-heading">
+      <form method="dialog" class="settings-dialog__frame" id="settings-form">
+        <div class="settings-dialog__header">
+          <div>
+            <p class="eyebrow">Browser session</p>
+            <h2 id="settings-heading">Dashboard connection</h2>
+            <p>
+              Connection overrides remain in this browser tab and never change deployment policy.
+            </p>
+          </div>
+          <button class="icon-button" value="cancel" aria-label="Close settings" type="submit">
+            <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m6 6 12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </div>
+
+        <div class="settings-dialog__body">
+          <label class="toggle-row">
+            <span>
+              <strong>Design preview</strong>
+              <small>Use safe local demonstration data instead of making API calls.</small>
+            </span>
+            <input type="checkbox" name="demoMode" />
+          </label>
+
+          <label class="field field--full">
+            <span>API base URL</span>
+            <input name="apiBaseUrl" type="url" placeholder="Same origin" autocomplete="url" />
+            <small
+              >Leave blank for a same-origin gateway or BFF. Remote connections require
+              HTTPS.</small
+            >
+          </label>
+
+          <label class="field field--full">
+            <span>Tenant ID</span>
+            <input name="tenantId" maxlength="200" autocomplete="organization" />
+            <small>Optional. The authenticated backend remains authoritative.</small>
+          </label>
+
+          <label class="field field--full" id="development-token-field" hidden>
+            <span>Development bearer token</span>
+            <input name="developmentToken" type="password" autocomplete="off" />
+            <small>Session-only. This field is unavailable in the production-safe default.</small>
+          </label>
+
+          <div class="settings-policy">
+            <span>Write controls</span>
+            <strong id="settings-write-state">Locked by deployment configuration</strong>
+          </div>
+
+          <div class="settings-warning">
+            <strong>Production authentication</strong>
+            <span
+              >Use a same-origin authenticated session or PKCE/BFF boundary. Never publish
+              service-principal credentials in this dashboard.</span
+            >
+          </div>
+        </div>
+
+        <div class="settings-dialog__footer">
+          <button class="button button--secondary" value="cancel" type="submit">Cancel</button>
+          <button class="button button--primary" value="default" type="submit" data-save-settings>
+            Save session settings
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="loading-overlay" id="loading-overlay" aria-hidden="true" role="status">
+      <span class="spinner" aria-hidden="true"></span>
+      <span>Working</span>
+    </div>
+
+    <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
+
+    <script src="./config.js"></script>
+    <script src="./form-state-guard.js"></script>
+    <script type="module" src="./app-v2.js"></script>
+  </body>
+</html>

@@ -1,0 +1,280 @@
+name: Release readiness
+
+on:
+  push:
+    branches:
+      - 'release/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: ghcr.io/appolon1908-hue/scrapper
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+        env:
+          POSTGRES_USER: scrapper
+          POSTGRES_PASSWORD: scrapper
+          POSTGRES_DB: scrapper
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U scrapper -d scrapper"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7.4-alpine@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      NODE_ENV: test
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      DATABASE_URL: postgresql://scrapper:scrapper@127.0.0.1:5432/scrapper
+      REDIS_URL: redis://127.0.0.1:6379
+      SERVICE_PRINCIPALS_FILE: test/fixtures-service-principals.json
+      EIN_FINGERPRINT_PEPPER: release-test-pepper
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.16.0'
+          cache: npm
+
+      - run: npm ci --include=dev --ignore-scripts --no-audit --no-fund
+
+      - name: Verify source and unit contracts
+        run: |
+          npm run lint
+          npm run typecheck
+          npm run build
+          node --test test/unit-*.test.mjs
+
+      - name: Verify PostgreSQL Redis migrations leases and replay
+        run: npm run test:integration
+
+  deployment-policy:
+    name: deployment-policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Verify deployment workflows cannot mutate remote hosts automatically
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruby scripts/validate-workflow-policy.rb
+          shellcheck -S error \
+            scripts/runtime-path-inventory.sh \
+            scripts/verify-release-context.sh \
+            scripts/verify-release-image.sh \
+            scripts/validate-deployment-scaffolding.sh \
+            scripts/deploy-staging.sh \
+            scripts/rollback-staging.sh \
+            scripts/deploy-production.sh \
+            scripts/rollback-production.sh
+          bash scripts/validate-deployment-scaffolding.sh
+
+  branch-governance:
+    name: branch-governance
+    needs: [verify, deployment-policy]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Require protected release branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          encoded_branch="$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["GITHUB_REF_NAME"], safe=""))')"
+          protected="$(gh api "repos/${GITHUB_REPOSITORY}/branches/${encoded_branch}" --jq '.protected')"
+          if [[ "$protected" != "true" ]]; then
+            echo "Release blocked: $GITHUB_REF_NAME is not protected." >&2
+            exit 1
+          fi
+
+  gateway-validation:
+    name: gateway-validation
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Validate Caddy and Kong controls
+        run: bash scripts/validate-gateway.sh
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: gateway-evidence-${{ github.sha }}
+          path: release-evidence
+          if-no-files-found: warn
+          retention-days: 30
+
+  publish:
+    name: publish
+    needs: [verify, deployment-policy, branch-governance, gateway-validation]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      image: ${{ steps.identity.outputs.reference }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish release image
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Record immutable reference
+        id: identity
+        shell: bash
+        run: echo "reference=${IMAGE_NAME}@${{ steps.build.outputs.digest }}" >> "$GITHUB_OUTPUT"
+
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+
+      - name: Sign immutable image digest
+        run: cosign sign --yes '${{ steps.identity.outputs.reference }}'
+
+      - name: Attest published image
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Scan published image
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          image-ref: ${{ steps.identity.outputs.reference }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Write release identity
+        shell: bash
+        run: |
+          mkdir -p release-evidence
+          cat > release-evidence/image.json <<EOF
+          {
+            "repository": "${GITHUB_REPOSITORY}",
+            "commit": "${GITHUB_SHA}",
+            "image": "${IMAGE_NAME}",
+            "digest": "${{ steps.build.outputs.digest }}",
+            "immutable_reference": "${{ steps.identity.outputs.reference }}",
+            "signed": true,
+            "provenance_attested": true,
+            "sbom_requested": true,
+            "remote_server_modified": false,
+            "production_activated": false
+          }
+          EOF
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: image-identity-${{ github.sha }}
+          path: release-evidence/image.json
+          if-no-files-found: error
+          retention-days: 30
+
+  ephemeral-staging:
+    name: ephemeral-staging
+    needs: [publish, gateway-validation]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Materialize previous source for rollback exercise
+        shell: bash
+        run: |
+          set -euo pipefail
+          previous_sha="$(git rev-parse HEAD^)"
+          mkdir -p rollback-source
+          git archive "$previous_sha" | tar -x -C rollback-source
+          printf '%s\n' "$previous_sha" > rollback-source/SOURCE_SHA
+
+      - name: Deploy immutable image with writes disabled and exercise rollback
+        shell: bash
+        run: |
+          chmod +x scripts/staging-canary.sh
+          scripts/staging-canary.sh '${{ needs.publish.outputs.image }}' rollback-source
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: staging-and-rollback-evidence-${{ github.sha }}
+          path: release-evidence
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Confirm no remote deployment occurred
+        run: |
+          echo "REMOTE_SERVER_MODIFIED=false"
+          echo "Use Runtime path inventory and a manual deployment workflow for remote environments."

@@ -1,0 +1,29 @@
+https://integration.test:8443 {
+  tls /certs/server.crt /certs/server.key {
+    client_auth {
+      mode require_and_verify
+      trust_pool file /certs/ca.crt
+    }
+  }
+
+  @allowlisted remote_ip private_ranges
+  handle @allowlisted {
+    respond "mtls-allowlist-ok" 200
+  }
+  respond 403
+}
+
+https://blocked.integration.test:8444 {
+  tls /certs/server.crt /certs/server.key {
+    client_auth {
+      mode require_and_verify
+      trust_pool file /certs/ca.crt
+    }
+  }
+
+  @allowlisted remote_ip 192.0.2.1/32
+  handle @allowlisted {
+    respond "unexpected" 200
+  }
+  respond 403
+}

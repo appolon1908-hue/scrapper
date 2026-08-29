@@ -1,0 +1,18 @@
+name: Deprecated stale-publish cancellation entrypoint
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  blocked:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Legacy workflow disabled
+        shell: bash
+        run: |
+          echo 'This workflow is intentionally inert because publication is consolidated in Release readiness.' >&2
+          exit 1

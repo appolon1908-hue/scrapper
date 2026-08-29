@@ -1,0 +1,1444 @@
+openapi: 3.1.0
+info:
+  title: Codestra Business Scrapper API
+  version: 2.1.0
+  description: 'Multi-tenant business website crawl and CRM-enrichment control plane.
+
+    The OpenAPI document describes the implemented API surface only. It does
+
+    not claim that the service has been deployed to production.
+
+    '
+servers:
+  - url: /
+tags:
+  - name: System
+  - name: Jobs
+  - name: Operations
+security:
+  - bearerAuth: []
+paths:
+  /:
+    get:
+      tags:
+        - System
+      security: []
+      operationId: serviceInfo
+      responses:
+        '200':
+          description: Service metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - service
+                  - version
+                  - api
+                  - documentation
+                  - deployment_status
+                properties:
+                  service:
+                    type: string
+                  version:
+                    type: string
+                  api:
+                    type: string
+                  documentation:
+                    type: string
+                  deployment_status:
+                    type: string
+  /healthz:
+    get:
+      tags:
+        - System
+      security: []
+      operationId: liveness
+      responses:
+        '200':
+          description: Process is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+  /readyz:
+    get:
+      tags:
+        - System
+      security: []
+      operationId: readiness
+      responses:
+        '200':
+          description: Dependencies are ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '503':
+          description: A dependency is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+  /openapi.yaml:
+    get:
+      tags:
+        - System
+      security: []
+      operationId: openApiDocument
+      responses:
+        '200':
+          description: OpenAPI contract
+          content:
+            application/yaml:
+              schema:
+                type: string
+  /api/v2/jobs:
+    post:
+      tags:
+        - Jobs
+      operationId: createCrawlJob
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - $ref: '#/components/parameters/CorrelationHeader'
+        - $ref: '#/components/parameters/IdempotencyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrawlJobRequest'
+      responses:
+        '200':
+          description: Existing idempotent job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCreateResponse'
+        '202':
+          description: New job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCreateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    get:
+      tags:
+        - Jobs
+      operationId: listCrawlJobs
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/JobStatus'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            maxLength: 500
+      responses:
+        '200':
+          description: Tenant jobs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v2/commands/crawl:
+    post:
+      tags:
+        - Jobs
+      operationId: commandCreateCrawlJob
+      description: Command-style alias for POST /api/v2/jobs.
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - $ref: '#/components/parameters/CorrelationHeader'
+        - $ref: '#/components/parameters/IdempotencyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrawlJobRequest'
+      responses:
+        '200':
+          description: Existing idempotent job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCreateResponse'
+        '202':
+          description: New job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCreateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v2/jobs/{id}:
+    get:
+      tags:
+        - Jobs
+      operationId: getCrawlJob
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description:
+            Crawl job with a safe request summary. Verification input and internal worker fields are
+            omitted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v2/jobs/{id}/results:
+    get:
+      tags:
+        - Jobs
+      operationId: listCrawlJobResults
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - $ref: '#/components/parameters/JobId'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: minConfidence
+          in: query
+          schema:
+            type: number
+            minimum: 0
+            maximum: 1
+            default: 0
+      responses:
+        '200':
+          description: Resolved business records
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v2/jobs/{id}/cancel:
+    post:
+      tags:
+        - Jobs
+      operationId: cancelCrawlJob
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - $ref: '#/components/parameters/CorrelationHeader'
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Cancellation accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v2/commands/jobs/{id}/cancel:
+    post:
+      tags:
+        - Jobs
+      operationId: commandCancelCrawlJob
+      description: Command-style alias for POST /api/v2/jobs/{id}/cancel.
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - $ref: '#/components/parameters/CorrelationHeader'
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Cancellation accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v2/jobs/{id}/retry:
+    post:
+      tags:
+        - Jobs
+      operationId: retryCrawlJob
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - $ref: '#/components/parameters/CorrelationHeader'
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '202':
+          description: Retry accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v2/commands/jobs/{id}/retry:
+    post:
+      tags:
+        - Jobs
+      operationId: commandRetryCrawlJob
+      description: Command-style alias for POST /api/v2/jobs/{id}/retry.
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+        - $ref: '#/components/parameters/CorrelationHeader'
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '202':
+          description: Retry accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v2/stats:
+    get:
+      tags:
+        - Operations
+      operationId: tenantStats
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+      responses:
+        '200':
+          description: Tenant job, business-entity, and outbox counts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v2/metrics:
+    get:
+      tags:
+        - Operations
+      operationId: prometheusMetrics
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+      responses:
+        '200':
+          description: Prometheus text exposition
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v2/capabilities:
+    get:
+      tags:
+        - Operations
+      operationId: serviceCapabilities
+      parameters:
+        - $ref: '#/components/parameters/TenantHeader'
+      responses:
+        '200':
+          description:
+            Implemented and disabled capabilities. False or absent capabilities must never be interpreted
+            as connected.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Capabilities'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /platform/v2/tenants:
+    get:
+      summary: Read /platform/v2/tenants
+      responses:
+        '200':
+          description: Success
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+    post:
+      summary: Command /platform/v2/tenants
+      responses:
+        '200':
+          description: Success
+        '201':
+          description: Created
+        '202':
+          description: Accepted
+        '409':
+          description: Capability disabled or conflict
+  /platform/v2/tenants/{tenantId}:
+    get:
+      summary: Read /platform/v2/tenants/{tenantId}
+      responses:
+        '200':
+          description: Success
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /platform/v2/tenants/{tenantId}/summary:
+    get:
+      summary: Read /platform/v2/tenants/{tenantId}/summary
+      responses:
+        '200':
+          description: Success
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/sources:
+    get:
+      summary: Read /api/v2/sources
+      responses:
+        '200':
+          description: Success
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+    post:
+      summary: Command /api/v2/sources
+      responses:
+        '200':
+          description: Success
+        '201':
+          description: Created
+        '202':
+          description: Accepted
+        '409':
+          description: Capability disabled or conflict
+  /api/v2/schedules:
+    get:
+      summary: Read /api/v2/schedules
+      responses:
+        '200':
+          description: Success
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+    post:
+      summary: Command /api/v2/schedules
+      responses:
+        '200':
+          description: Success
+        '201':
+          description: Created
+        '202':
+          description: Accepted
+        '409':
+          description: Capability disabled or conflict
+  /api/v2/integrations:
+    get:
+      summary: Read /api/v2/integrations
+      responses:
+        '200':
+          description: Success
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+    post:
+      summary: Command /api/v2/integrations
+      responses:
+        '200':
+          description: Success
+        '201':
+          description: Created
+        '202':
+          description: Accepted
+        '409':
+          description: Capability disabled or conflict
+  /api/v2/businesses:
+    get:
+      summary: Read /api/v2/businesses
+      responses:
+        '200':
+          description: Success
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/businesses/{id}/evidence:
+    get:
+      summary: Read /api/v2/businesses/{id}/evidence
+      responses:
+        '200':
+          description: Success
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/reviews:
+    get:
+      summary: Read /api/v2/reviews
+      responses:
+        '200':
+          description: Success
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/outbox:
+    get:
+      summary: Read /api/v2/outbox
+      responses:
+        '200':
+          description: Success
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/inbox:
+    get:
+      summary: Read /api/v2/inbox
+      responses:
+        '200':
+          description: Success
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/dead-letters:
+    get:
+      summary: Read /api/v2/dead-letters
+      responses:
+        '200':
+          description: Success
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/exports:
+    get:
+      summary: Read /api/v2/exports
+      responses:
+        '200':
+          description: Success
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+    post:
+      summary: Command /api/v2/exports
+      responses:
+        '200':
+          description: Success
+        '201':
+          description: Created
+        '202':
+          description: Accepted
+        '409':
+          description: Capability disabled or conflict
+  /api/v2/audit-events:
+    get:
+      summary: Read /api/v2/audit-events
+      responses:
+        '200':
+          description: Success
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /api/v2/control-plane/summary:
+    get:
+      summary: Read /api/v2/control-plane/summary
+      responses:
+        '200':
+          description: Success
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+  /platform/v2/tenants/{tenantId}/activate:
+    post:
+      summary: Command /platform/v2/tenants/{tenantId}/activate
+      responses:
+        '200':
+          description: Success
+        '201':
+          description: Created
+        '202':
+          description: Accepted
+        '409':
+          description: Capability disabled or conflict
+  /platform/v2/tenants/{tenantId}/suspend:
+    post:
+      summary: Command /platform/v2/tenants/{tenantId}/suspend
+      responses:
+        '200':
+          description: Success
+        '201':
+          description: Created
+        '202':
+          description: Accepted
+        '409':
+          description: Capability disabled or conflict
+  /platform/v2/tenants/{tenantId}/decommission:
+    post:
+      summary: Command /platform/v2/tenants/{tenantId}/decommission
+      responses:
+        '200':
+          description: Success
+        '201':
+          description: Created
+        '202':
+          description: Accepted
+        '409':
+          description: Capability disabled or conflict
+  /api/v2/sources/{id}/validate:
+    post:
+      summary: Command /api/v2/sources/{id}/validate
+      responses:
+        '200':
+          description: Success
+        '201':
+          description: Created
+        '202':
+          description: Accepted
+        '409':
+          description: Capability disabled or conflict
+  /api/v2/schedules/{id}/pause:
+    post:
+      summary: Command /api/v2/schedules/{id}/pause
+      responses:
+        '200':
+          description: Success
+        '201':
+          description: Created
+        '202':
+          description: Accepted
+        '409':
+          description: Capability disabled or conflict
+  /api/v2/schedules/{id}/resume:
+    post:
+      summary: Command /api/v2/schedules/{id}/resume
+      responses:
+        '200':
+          description: Success
+        '201':
+          description: Created
+        '202':
+          description: Accepted
+        '409':
+          description: Capability disabled or conflict
+  /api/v2/integrations/{id}/pause:
+    post:
+      summary: Command /api/v2/integrations/{id}/pause
+      responses:
+        '200':
+          description: Success
+        '201':
+          description: Created
+        '202':
+          description: Accepted
+        '409':
+          description: Capability disabled or conflict
+  /api/v2/integrations/{id}/resume:
+    post:
+      summary: Command /api/v2/integrations/{id}/resume
+      responses:
+        '200':
+          description: Success
+        '201':
+          description: Created
+        '202':
+          description: Accepted
+        '409':
+          description: Capability disabled or conflict
+  /api/v2/reviews/{id}/approve:
+    post:
+      summary: Command /api/v2/reviews/{id}/approve
+      responses:
+        '200':
+          description: Success
+        '201':
+          description: Created
+        '202':
+          description: Accepted
+        '409':
+          description: Capability disabled or conflict
+  /api/v2/reviews/{id}/reject:
+    post:
+      summary: Command /api/v2/reviews/{id}/reject
+      responses:
+        '200':
+          description: Success
+        '201':
+          description: Created
+        '202':
+          description: Accepted
+        '409':
+          description: Capability disabled or conflict
+  /api/v2/reviews/{id}/merge:
+    post:
+      summary: Command /api/v2/reviews/{id}/merge
+      responses:
+        '200':
+          description: Success
+        '201':
+          description: Created
+        '202':
+          description: Accepted
+        '409':
+          description: Capability disabled or conflict
+  /api/v2/reviews/{id}/split:
+    post:
+      summary: Command /api/v2/reviews/{id}/split
+      responses:
+        '200':
+          description: Success
+        '201':
+          description: Created
+        '202':
+          description: Accepted
+        '409':
+          description: Capability disabled or conflict
+  /api/v2/reviews/{id}/reopen:
+    post:
+      summary: Command /api/v2/reviews/{id}/reopen
+      responses:
+        '200':
+          description: Success
+        '201':
+          description: Created
+        '202':
+          description: Accepted
+        '409':
+          description: Capability disabled or conflict
+  /api/v2/outbox/{id}/replay:
+    post:
+      summary: Command /api/v2/outbox/{id}/replay
+      responses:
+        '200':
+          description: Success
+        '201':
+          description: Created
+        '202':
+          description: Accepted
+        '409':
+          description: Capability disabled or conflict
+  /api/v2/sources/{id}:
+    patch:
+      summary: Update /api/v2/sources/{id}
+      responses:
+        '200':
+          description: Success
+        '409':
+          description: Version conflict
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    TenantHeader:
+      name: x-tenant-id
+      in: header
+      required: false
+      description: Must match the authenticated service principal when supplied.
+      schema:
+        type: string
+        maxLength: 200
+    CorrelationHeader:
+      name: x-correlation-id
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 200
+    IdempotencyHeader:
+      name: idempotency-key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 200
+    JobId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Authentication failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Required scope is missing
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Request conflicts with current state
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Health:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+        request_id:
+          type: string
+        required_scope:
+          type: string
+        details: {}
+    JobStatus:
+      type: string
+      enum:
+        - queued
+        - running
+        - completed
+        - failed
+        - cancel_requested
+        - cancelled
+    CrawlJobRequest:
+      type: object
+      required:
+        - seedUrls
+      additionalProperties: false
+      properties:
+        seedUrls:
+          type: array
+          minItems: 1
+          maxItems: 5000
+          items:
+            type: string
+            format: uri
+        profile:
+          type: string
+          enum:
+            - company
+            - contacts
+            - registry
+            - full
+          default: full
+        mode:
+          type: string
+          enum:
+            - single
+            - domain
+            - list
+            - discovery
+          default: domain
+        browser:
+          type: string
+          enum:
+            - auto
+            - http
+            - playwright
+          default: auto
+        maxPages:
+          type: integer
+          minimum: 1
+          maximum: 50000
+          default: 250
+        maxCompanies:
+          type: integer
+          minimum: 1
+          maximum: 5000
+          default: 500
+        maxDepth:
+          type: integer
+          minimum: 0
+          maximum: 8
+          default: 3
+        requestsPerSecond:
+          type: number
+          minimum: 0.1
+          maximum: 10
+          default: 1
+        includePatterns:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            minLength: 1
+            maxLength: 300
+          default: []
+        excludePatterns:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            minLength: 1
+            maxLength: 300
+          default: []
+        countryCode:
+          type: string
+          pattern: ^[A-Z]{2}$
+          default: US
+        callbackReference:
+          type: string
+          maxLength: 200
+        tags:
+          type: object
+          additionalProperties:
+            type: string
+            maxLength: 500
+          default: {}
+        verification:
+          type: object
+          additionalProperties: false
+          properties:
+            knownEin:
+              type: string
+              pattern: ^\d{2}-?\d{7}$
+            provider:
+              type: string
+              maxLength: 100
+            consentReference:
+              type: string
+              maxLength: 200
+    CrawlJobPublicRequest:
+      type: object
+      description:
+        Safe request summary returned to authorized operators. Sensitive verification input is always
+        omitted.
+      required:
+        - seedUrls
+      additionalProperties: false
+      properties:
+        seedUrls:
+          type: array
+          minItems: 1
+          maxItems: 5000
+          items:
+            type: string
+            format: uri
+        profile:
+          type: string
+          enum:
+            - company
+            - contacts
+            - registry
+            - full
+        mode:
+          type: string
+          enum:
+            - single
+            - domain
+            - list
+            - discovery
+        browser:
+          type: string
+          enum:
+            - auto
+            - http
+            - playwright
+        maxPages:
+          type: integer
+          minimum: 1
+          maximum: 50000
+        maxCompanies:
+          type: integer
+          minimum: 1
+          maximum: 5000
+        maxDepth:
+          type: integer
+          minimum: 0
+          maximum: 8
+        requestsPerSecond:
+          type: number
+          minimum: 0.1
+          maximum: 10
+        includePatterns:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+        excludePatterns:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+        countryCode:
+          type: string
+          pattern: ^[A-Z]{2}$
+        callbackReference:
+          type: string
+          maxLength: 200
+        tags:
+          type: object
+          additionalProperties:
+            type: string
+    Job:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - correlation_id
+        - status
+        - payload
+        - progress
+        - error
+        - version
+        - created_at
+        - updated_at
+        - started_at
+        - completed_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+        correlation_id:
+          type: string
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        payload:
+          $ref: '#/components/schemas/CrawlJobPublicRequest'
+        progress:
+          type: object
+          additionalProperties: true
+        error:
+          type:
+            - object
+            - 'null'
+          properties:
+            code:
+              type: string
+            message:
+              type:
+                - string
+                - 'null'
+        version:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        started_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        completed_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+    JobCreateResponse:
+      allOf:
+        - $ref: '#/components/schemas/Job'
+        - type: object
+          required:
+            - duplicate
+          properties:
+            duplicate:
+              type: boolean
+    JobPage:
+      type: object
+      required:
+        - items
+        - next_cursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Job'
+        next_cursor:
+          type:
+            - string
+            - 'null'
+    Evidence:
+      type: object
+      required:
+        - sourceUrl
+        - extractor
+        - capturedAt
+      properties:
+        sourceUrl:
+          type: string
+          format: uri
+        extractor:
+          type: string
+        capturedAt:
+          type: string
+          format: date-time
+        label:
+          type: string
+    PublicOfficer:
+      type: object
+      required:
+        - name
+        - title
+        - confidence
+        - evidence
+      properties:
+        name:
+          type: string
+        title:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/Evidence'
+    BusinessRecord:
+      type: object
+      required:
+        - entityKey
+        - legalName
+        - displayName
+        - website
+        - domain
+        - description
+        - emails
+        - phones
+        - addresses
+        - socialProfiles
+        - categories
+        - officers
+        - einMasked
+        - einFingerprint
+        - einStatus
+        - confidence
+        - evidence
+        - firstSeenAt
+        - lastSeenAt
+      properties:
+        entityKey:
+          type: string
+        legalName:
+          type:
+            - string
+            - 'null'
+        displayName:
+          type: string
+        website:
+          type: string
+          format: uri
+        domain:
+          type: string
+        description:
+          type:
+            - string
+            - 'null'
+        emails:
+          type: array
+          items:
+            type: string
+        phones:
+          type: array
+          items:
+            type: string
+        addresses:
+          type: array
+          items:
+            type: string
+        socialProfiles:
+          type: array
+          items:
+            type: string
+            format: uri
+        categories:
+          type: array
+          items:
+            type: string
+        officers:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicOfficer'
+        einMasked:
+          type:
+            - string
+            - 'null'
+        einFingerprint:
+          type:
+            - string
+            - 'null'
+        einStatus:
+          type: string
+          enum:
+            - not_observed
+            - observed_public
+            - verified
+            - mismatch
+            - manual_review
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        evidence:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              $ref: '#/components/schemas/Evidence'
+        firstSeenAt:
+          type: string
+          format: date-time
+        lastSeenAt:
+          type: string
+          format: date-time
+    ResultPage:
+      type: object
+      required:
+        - items
+        - next_cursor
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required:
+              - id
+              - record
+            properties:
+              id:
+                type: string
+                format: uuid
+              record:
+                $ref: '#/components/schemas/BusinessRecord'
+        next_cursor:
+          type:
+            - string
+            - 'null'
+          format: uuid
+    TenantStats:
+      type: object
+      required:
+        - jobs
+        - business_entities
+        - outbox
+      properties:
+        jobs:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+        business_entities:
+          type: integer
+          minimum: 0
+        outbox:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+    Capabilities:
+      type: object
+      required:
+        - version
+        - max_companies_per_job
+        - max_pages_per_job
+        - robots_policy
+        - private_network_crawling
+        - login_or_captcha_bypass
+        - crawl_job_api
+        - http_crawler
+        - playwright_crawler
+        - outbound_middleware_delivery
+        - registry_enrichment
+        - discovery
+        - n8n_reverse_command_inbox
+        - odoo_crm_projection
+        - authoritative_ein_provider
+        - keycloak_human_login
+        - runtime_paths_verified
+        - production_deployed
+        - ein_storage
+      additionalProperties: true
+      properties:
+        version:
+          type: string
+        max_companies_per_job:
+          type: integer
+          minimum: 1
+        max_pages_per_job:
+          type: integer
+          minimum: 1
+        robots_policy:
+          type: string
+        private_network_crawling:
+          type: boolean
+        login_or_captcha_bypass:
+          type: boolean
+        crawl_job_api:
+          type: boolean
+        http_crawler:
+          type: boolean
+        playwright_crawler:
+          type: boolean
+        outbound_middleware_delivery:
+          type: boolean
+        registry_enrichment:
+          type: boolean
+        discovery:
+          type: boolean
+        n8n_reverse_command_inbox:
+          type: boolean
+        odoo_crm_projection:
+          type: boolean
+        authoritative_ein_provider:
+          type: boolean
+        keycloak_human_login:
+          type: boolean
+        runtime_paths_verified:
+          type: boolean
+        production_deployed:
+          type: boolean
+        dashboard_source_available:
+          type: boolean
+        external_delivery_enabled:
+          type: boolean
+        registry_enrichment_enabled:
+          type: boolean
+        registry_provider_connected:
+          type: boolean
+        durable_inbound_commands:
+          type: boolean
+        direct_odoo_delivery_enabled:
+          type: boolean
+        search_discovery_enabled:
+          type: boolean
+        admin_console_available:
+          type: boolean
+        production_deployment_verified:
+          type: boolean
+        ein_storage:
+          type: string
+        control_plane_api:
+          type: boolean
+        tenant_onboarding:
+          type: boolean
+        source_catalog:
+          type: boolean
+        schedules:
+          type: boolean
+        business_search:
+          type: boolean
+        integration_inventory:
+          type: boolean
+        review_queue:
+          type: boolean
+        delivery_operations:
+          type: boolean
+        audit_ledger:
+          type: boolean
+        review_mutations:
+          type: boolean
+        schedule_execution:
+          type: boolean
+        delivery_replay:
+          type: boolean
+        server_exports:
+          type: boolean

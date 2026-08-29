@@ -1,0 +1,19 @@
+name: Deprecated image publication entrypoint
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  blocked:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Use the canonical release workflow
+        shell: bash
+        run: |
+          echo 'This legacy workflow is intentionally inert.' >&2
+          echo 'Use Release readiness on a protected release branch.' >&2
+          exit 1
