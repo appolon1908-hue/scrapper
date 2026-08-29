@@ -20,6 +20,15 @@ const { closeQueues, crawlQueue, crawlQueueJobId, enqueueCrawlJob } = await impo
   '../dist/queues.js'
 );
 
+const expectedMigrations = [
+  '001_initial.sql',
+  '002_tenant_integrity.sql',
+  '003_runtime_leases.sql',
+  '004_turnkey_control_plane.sql',
+  '005_discovery.sql',
+  '006_source_authorization.sql',
+];
+
 const admin = new Client({ connectionString: process.env.DATABASE_URL });
 await admin.connect();
 
@@ -47,29 +56,30 @@ test('real PostgreSQL and Redis runtime contract', async (t) => {
     'migrations apply idempotently and latest migration rolls back/reapplies',
     async () => {
       await runMigrations();
-      assert.deepEqual(await migrationNames(), [
-        '001_initial.sql',
-        '002_tenant_integrity.sql',
-        '003_runtime_leases.sql',
-        '004_turnkey_control_plane.sql',
-      ]);
+      assert.deepEqual(await migrationNames(), expectedMigrations);
 
       await runMigrations();
-      assert.equal((await migrationNames()).length, 4);
+      assert.equal((await migrationNames()).length, expectedMigrations.length);
 
-      assert.equal(await rollbackLastMigration(), '004_turnkey_control_plane.sql');
-      const removed = await pool.query(
-        `select 1 from information_schema.columns
-       where table_schema='public' and table_name='platform_tenants' and column_name='tenant_id'`,
+      assert.equal(await rollbackLastMigration(), '006_source_authorization.sql');
+      const removedPolicyTable = await pool.query(
+        `select to_regclass('public.domain_policies') as relation`,
       );
-      assert.equal(removed.rowCount, 0);
+      assert.equal(removedPolicyTable.rows[0]?.relation, null);
+      const removedAuthorizationColumns = await pool.query(
+        `select 1 from information_schema.columns
+         where table_schema='public' and table_name='tenant_sources'
+           and column_name in ('authorization_basis','authorization_reference')`,
+      );
+      assert.equal(removedAuthorizationColumns.rowCount, 0);
 
       await runMigrations();
-      const restored = await pool.query(
-        `select 1 from information_schema.columns
-       where table_schema='public' and table_name='platform_tenants' and column_name='tenant_id'`,
+      assert.deepEqual(await migrationNames(), expectedMigrations);
+      assert.equal(
+        (await pool.query(`select to_regclass('public.domain_policies') as relation`)).rows[0]
+          ?.relation,
+        'domain_policies',
       );
-      assert.equal(restored.rowCount, 1);
     },
   );
 
@@ -216,18 +226,13 @@ test('real PostgreSQL and Redis runtime contract', async (t) => {
   });
 
   await t.test('full disposable migration rollback and reapply succeeds', async () => {
-    assert.equal(await rollbackLastMigration(), '004_turnkey_control_plane.sql');
-    assert.equal(await rollbackLastMigration(), '002_tenant_integrity.sql');
-    assert.equal(await rollbackLastMigration(), '001_initial.sql');
+    for (const filename of [...expectedMigrations].reverse()) {
+      assert.equal(await rollbackLastMigration(), filename);
+    }
     const absent = await pool.query(`select to_regclass('public.crawl_jobs') as relation`);
     assert.equal(absent.rows[0]?.relation, null);
 
     await runMigrations();
-    assert.deepEqual(await migrationNames(), [
-      '001_initial.sql',
-      '002_tenant_integrity.sql',
-      '003_runtime_leases.sql',
-      '004_turnkey_control_plane.sql',
-    ]);
+    assert.deepEqual(await migrationNames(), expectedMigrations);
   });
 });
