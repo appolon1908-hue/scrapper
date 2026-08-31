@@ -27,7 +27,7 @@
     "@crawlee/cheerio": "3.18.1",
     "@crawlee/core": "3.18.1",
     "@crawlee/playwright": "3.18.1",
-    "bullmq": "6.2.2",
+    "bullmq": "6.3.1",
     "cheerio": "1.2.0",
     "fastify": "5.12.1",
     "ioredis": "6.0.0",
