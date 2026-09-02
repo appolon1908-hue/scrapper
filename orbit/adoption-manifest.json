@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "2.0.0",
+  "repository": "appolon1908-hue/scrapper",
+  "classification": "backend-api",
+  "targetBranch": "codex/codestra-orbit-v2-scrapper",
+  "adoptionMode": "n/a-no-rendered-interface",
+  "domain": null,
+  "domainStatus": "not-applicable",
+  "requirements": {
+    "renderedInterface": false,
+    "sharedHeaderFooter": false,
+    "loginLogoutPages": false,
+    "serviceAuthorization": true,
+    "browserTokenResponseProhibited": true,
+    "egressPolicy": true,
+    "correlationId": true,
+    "audit": true,
+    "rollback": true
+  },
+  "status": "branch-created",
+  "blockers": [
+    "Keep customer login, logout, header, footer, and page code out of this non-rendered crawler service.",
+    "Authenticate service and operator calls with least-privilege identities; validate tenant, scope, correlation, rate, and outbound-target policy.",
+    "Prove crawl safety, robots and legal policy, secret handling, observability, immutable release, and rollback before deployment changes."
+  ]
+}
