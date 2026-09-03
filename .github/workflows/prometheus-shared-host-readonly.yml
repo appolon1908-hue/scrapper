@@ -1,0 +1,339 @@
+name: Read-only Prometheus shared-host audit
+
+on:
+  push:
+    branches:
+      - audit/prometheus-shared-host-readonly-20260903
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prometheus-shared-host-readonly-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: production-runtime-audit
+    env:
+      RUNTIME_HOST: ${{ secrets.RUNTIME_AUDIT_HOST }}
+      RUNTIME_USER: ${{ secrets.RUNTIME_AUDIT_USER }}
+      RUNTIME_SSH_KEY: ${{ secrets.RUNTIME_AUDIT_SSH_KEY }}
+      RUNTIME_KNOWN_HOSTS: ${{ secrets.RUNTIME_AUDIT_KNOWN_HOSTS }}
+      RUNTIME_SSH_PORT: ${{ vars.RUNTIME_AUDIT_SSH_PORT || '22' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Inspect only Prometheus runtime state
+        id: inspect
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -d -m 0755 evidence
+          captured_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          {
+            printf 'captured_at=%s\n' "$captured_at"
+            printf 'environment=production-runtime-audit\n'
+            printf 'server_modified=false\n'
+            printf 'host_present=%s\n' "$([[ -n "${RUNTIME_HOST:-}" ]] && echo true || echo false)"
+            printf 'user_present=%s\n' "$([[ -n "${RUNTIME_USER:-}" ]] && echo true || echo false)"
+            printf 'key_present=%s\n' "$([[ -n "${RUNTIME_SSH_KEY:-}" ]] && echo true || echo false)"
+            printf 'known_hosts_present=%s\n' "$([[ -n "${RUNTIME_KNOWN_HOSTS:-}" ]] && echo true || echo false)"
+          } > evidence/credential-resolution.txt
+
+          for value in RUNTIME_HOST RUNTIME_USER RUNTIME_SSH_KEY RUNTIME_KNOWN_HOSTS RUNTIME_SSH_PORT; do
+            [[ -n "${!value:-}" ]] || {
+              printf 'RUNTIME_AUDIT=FAIL missing=%s server_modified=false\n' "$value" | tee evidence/result.txt
+              exit 1
+            }
+          done
+          [[ "$RUNTIME_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          [[ "$RUNTIME_USER" =~ ^[A-Za-z0-9._-]+$ ]]
+          [[ "$RUNTIME_SSH_PORT" =~ ^[0-9]{1,5}$ ]]
+
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$RUNTIME_SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 0600 "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$RUNTIME_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/known_hosts"
+          ssh_options=(
+            -i "$HOME/.ssh/id_ed25519"
+            -p "$RUNTIME_SSH_PORT"
+            -o BatchMode=yes
+            -o ConnectTimeout=15
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+          )
+
+          ssh "${ssh_options[@]}" "$RUNTIME_USER@$RUNTIME_HOST" 'python3 -' > evidence/prometheus-runtime-observation.json <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import platform
+          import re
+          import shutil
+          import socket
+          import subprocess
+          import urllib.error
+          import urllib.request
+          from collections import Counter
+          from datetime import UTC, datetime
+          from pathlib import Path
+
+          def run(args: list[str], timeout: int = 20) -> dict[str, object]:
+              try:
+                  completed = subprocess.run(
+                      args,
+                      check=False,
+                      capture_output=True,
+                      text=True,
+                      timeout=timeout,
+                  )
+                  return {
+                      "returncode": completed.returncode,
+                      "stdout": completed.stdout.strip(),
+                      "stderr_present": bool(completed.stderr.strip()),
+                  }
+              except (OSError, subprocess.TimeoutExpired) as exc:
+                  return {"returncode": 127, "stdout": "", "stderr_present": True, "error_type": type(exc).__name__}
+
+          def docker_template(container_id: str, template: str) -> str:
+              result = run(["docker", "inspect", "--format", template, container_id])
+              return str(result.get("stdout", "")) if result.get("returncode") == 0 else ""
+
+          def parse_prometheus_metrics(text: str) -> dict[str, object]:
+              wanted = {
+                  "prometheus_rule_evaluation_failures_total",
+                  "prometheus_rule_group_last_evaluation_timestamp_seconds",
+                  "prometheus_tsdb_head_series",
+                  "prometheus_tsdb_head_chunks",
+                  "prometheus_tsdb_wal_fsync_duration_seconds_count",
+                  "prometheus_tsdb_wal_truncations_failed_total",
+                  "prometheus_tsdb_compactions_failed_total",
+                  "prometheus_notifications_errors_total",
+              }
+              values: dict[str, list[float]] = {name: [] for name in wanted}
+              for raw in text.splitlines():
+                  if not raw or raw.startswith("#"):
+                      continue
+                  match = re.match(r"^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{[^}]*\})?\s+([^\s]+)", raw)
+                  if not match or match.group(1) not in values:
+                      continue
+                  try:
+                      values[match.group(1)].append(float(match.group(2)))
+                  except ValueError:
+                      pass
+              return {
+                  name: {
+                      "series": len(items),
+                      "sum": sum(items),
+                      "max": max(items) if items else None,
+                  }
+                  for name, items in sorted(values.items())
+              }
+
+          def fetch(base: str, path: str) -> dict[str, object]:
+              url = base + path
+              request = urllib.request.Request(url, headers={"User-Agent": "codestra-prometheus-readonly-audit"})
+              try:
+                  with urllib.request.urlopen(request, timeout=8) as response:
+                      body = response.read(16 * 1024 * 1024)
+                      status = response.status
+                      content_type = response.headers.get("Content-Type", "")
+              except urllib.error.HTTPError as exc:
+                  body = exc.read(1024 * 1024)
+                  status = exc.code
+                  content_type = exc.headers.get("Content-Type", "") if exc.headers else ""
+              except Exception as exc:
+                  return {"path": path, "status": 0, "error_type": type(exc).__name__}
+
+              result: dict[str, object] = {
+                  "path": path,
+                  "status": status,
+                  "bytes": len(body),
+                  "content_type": content_type.split(";", 1)[0],
+              }
+              if status != 200:
+                  return result
+              if path == "/metrics":
+                  result["selected_metrics"] = parse_prometheus_metrics(body.decode("utf-8", errors="replace"))
+                  return result
+              if path in {"/-/healthy", "/-/ready"}:
+                  result["nonempty"] = bool(body.strip())
+                  return result
+              try:
+                  payload = json.loads(body)
+              except json.JSONDecodeError:
+                  result["json_valid"] = False
+                  return result
+              result["json_valid"] = True
+              data = payload.get("data") if isinstance(payload, dict) else None
+              if path == "/api/v1/targets" and isinstance(data, dict):
+                  active = data.get("activeTargets", [])
+                  dropped = data.get("droppedTargets", [])
+                  result["active_targets"] = len(active) if isinstance(active, list) else None
+                  result["dropped_targets"] = len(dropped) if isinstance(dropped, list) else None
+                  if isinstance(active, list):
+                      result["health"] = dict(sorted(Counter(str(item.get("health", "unknown")) for item in active if isinstance(item, dict)).items()))
+                      result["targets_with_last_error"] = sum(bool(item.get("lastError")) for item in active if isinstance(item, dict))
+              elif path == "/api/v1/rules" and isinstance(data, dict):
+                  groups = data.get("groups", [])
+                  rules = [rule for group in groups if isinstance(group, dict) for rule in group.get("rules", []) if isinstance(rule, dict)] if isinstance(groups, list) else []
+                  result["groups"] = len(groups) if isinstance(groups, list) else None
+                  result["rules"] = len(rules)
+                  result["rule_health"] = dict(sorted(Counter(str(rule.get("health", "unknown")) for rule in rules).items()))
+                  result["rules_with_last_error"] = sum(bool(rule.get("lastError")) for rule in rules)
+              elif path == "/api/v1/alerts" and isinstance(data, dict):
+                  alerts = data.get("alerts", [])
+                  result["alerts"] = len(alerts) if isinstance(alerts, list) else None
+                  if isinstance(alerts, list):
+                      result["alert_states"] = dict(sorted(Counter(str(item.get("state", "unknown")) for item in alerts if isinstance(item, dict)).items()))
+              elif path == "/api/v1/status/flags" and isinstance(data, dict):
+                  allow = {
+                      "storage.tsdb.path",
+                      "storage.tsdb.retention.time",
+                      "storage.tsdb.retention.size",
+                      "web.enable-admin-api",
+                      "web.enable-lifecycle",
+                      "web.listen-address",
+                      "query.max-concurrency",
+                      "query.timeout",
+                  }
+                  result["selected_flags"] = {key: data[key] for key in sorted(allow & set(data))}
+              elif path == "/api/v1/status/tsdb" and isinstance(data, dict):
+                  head = data.get("headStats")
+                  result["head_stats"] = head if isinstance(head, dict) else None
+              return result
+
+          evidence: dict[str, object] = {
+              "schema_version": "1.0",
+              "captured_at": datetime.now(UTC).isoformat(),
+              "hostname": socket.gethostname(),
+              "kernel": platform.platform(),
+              "identity": run(["id"]),
+              "server_modified": False,
+              "docker_available": shutil.which("docker") is not None,
+          }
+
+          containers: list[dict[str, object]] = []
+          ports = {9090}
+          volume_names: set[str] = set()
+          if evidence["docker_available"]:
+              listing = run(["docker", "ps", "-a", "--filter", "name=prometheus", "--format", "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"])
+              evidence["docker_access"] = listing.get("returncode") == 0
+              for line in str(listing.get("stdout", "")).splitlines():
+                  fields = line.split("\t", 4)
+                  if len(fields) < 5:
+                      continue
+                  container_id, name, image, status, published = fields
+                  ports_json = docker_template(container_id, "{{json .NetworkSettings.Ports}}")
+                  mounts_json = docker_template(container_id, "{{json .Mounts}}")
+                  state = docker_template(container_id, "{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.State.StartedAt}}|{{.Image}}")
+                  compose = docker_template(container_id, '{{ index .Config.Labels "com.docker.compose.project" }}|{{ index .Config.Labels "com.docker.compose.project.working_dir" }}|{{ index .Config.Labels "com.docker.compose.project.config_files" }}')
+                  networks = docker_template(container_id, '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}};{{end}}')
+                  try:
+                      port_map = json.loads(ports_json) if ports_json else {}
+                  except json.JSONDecodeError:
+                      port_map = {}
+                  for binding in (port_map.get("9090/tcp") or []) if isinstance(port_map, dict) else []:
+                      try:
+                          ports.add(int(binding.get("HostPort")))
+                      except (TypeError, ValueError):
+                          pass
+                  try:
+                      mounts = json.loads(mounts_json) if mounts_json else []
+                  except json.JSONDecodeError:
+                      mounts = []
+                  safe_mounts = []
+                  for mount in mounts if isinstance(mounts, list) else []:
+                      if not isinstance(mount, dict):
+                          continue
+                      item = {
+                          "type": mount.get("Type"),
+                          "name": mount.get("Name"),
+                          "source": mount.get("Source"),
+                          "destination": mount.get("Destination"),
+                          "rw": mount.get("RW"),
+                      }
+                      safe_mounts.append(item)
+                      if mount.get("Type") == "volume" and mount.get("Name"):
+                          volume_names.add(str(mount["Name"]))
+                  state_parts = state.split("|", 3)
+                  compose_parts = compose.split("|", 2)
+                  containers.append({
+                      "id_prefix": container_id[:12],
+                      "name": name,
+                      "configured_image": image,
+                      "published_ports": published,
+                      "state": state_parts[0] if len(state_parts) > 0 else None,
+                      "health": state_parts[1] if len(state_parts) > 1 else None,
+                      "started_at": state_parts[2] if len(state_parts) > 2 else None,
+                      "runtime_image_id": state_parts[3] if len(state_parts) > 3 else None,
+                      "compose_project": compose_parts[0] if len(compose_parts) > 0 else None,
+                      "compose_working_dir": compose_parts[1] if len(compose_parts) > 1 else None,
+                      "compose_files": compose_parts[2] if len(compose_parts) > 2 else None,
+                      "networks": [item for item in networks.split(";") if item],
+                      "mounts": safe_mounts,
+                  })
+          evidence["prometheus_containers"] = containers
+
+          endpoints: dict[str, object] = {}
+          paths = [
+              "/-/healthy",
+              "/-/ready",
+              "/metrics",
+              "/api/v1/targets",
+              "/api/v1/rules",
+              "/api/v1/alerts",
+              "/api/v1/status/flags",
+              "/api/v1/status/tsdb",
+          ]
+          for port in sorted(ports):
+              base = f"http://127.0.0.1:{port}"
+              endpoints[str(port)] = [fetch(base, path) for path in paths]
+          evidence["loopback_endpoints"] = endpoints
+
+          evidence["listeners"] = run(["ss", "-ltnH"])
+          evidence["filesystem"] = run(["df", "-Pk", "/", "/var/lib/docker"])
+          volumes = []
+          for name in sorted(volume_names):
+              mountpoint = docker_template(name, "{{.Mountpoint}}") if False else ""
+              inspect = run(["docker", "volume", "inspect", "--format", "{{.Mountpoint}}", name])
+              mountpoint = str(inspect.get("stdout", "")) if inspect.get("returncode") == 0 else ""
+              volume: dict[str, object] = {"name": name, "mountpoint": mountpoint}
+              if mountpoint:
+                  volume["df"] = run(["df", "-Pk", mountpoint])
+                  volume["du_kib"] = run(["du", "-sk", mountpoint], timeout=60)
+              volumes.append(volume)
+          evidence["prometheus_volumes"] = volumes
+          print(json.dumps(evidence, indent=2, sort_keys=True))
+          PY
+
+          python3 -m json.tool evidence/prometheus-runtime-observation.json >/dev/null
+          printf 'RUNTIME_AUDIT=PASS server_modified=false\n' | tee evidence/result.txt
+
+      - name: Upload sanitized read-only evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: prometheus-shared-host-readonly-audit
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
+
+      - name: Enforce successful read-only audit
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "${{ steps.inspect.outcome }}" = success
+          grep -q '^RUNTIME_AUDIT=PASS server_modified=false$' evidence/result.txt
+          printf 'PROMETHEUS_SHARED_HOST_READONLY_AUDIT=PASS\n'
