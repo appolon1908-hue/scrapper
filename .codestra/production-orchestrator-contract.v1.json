@@ -1,0 +1,45 @@
+{
+  "schema_version": "codestra.production-orchestrator-contract.v1",
+  "repository": "appolon1908-hue/scrapper",
+  "repository_id": 1329513537,
+  "default_branch": "main",
+  "role": "migration-evidence",
+  "release_intent_workflow": ".github/workflows/manual-release-intent.yml",
+  "deployment_authority": false,
+  "require_verified_commit": true,
+  "required_checks": [
+    "deployment-policy",
+    "validate"
+  ],
+  "supported_phases": [
+    "plan"
+  ],
+  "artifact_policy": {
+    "minimum_images": 0,
+    "maximum_images": 1,
+    "require_digest": true,
+    "allow_rebuild_after_staging": false,
+    "allow_retag_after_staging": false,
+    "require_sbom": false,
+    "require_provenance": false,
+    "require_signature": false
+  },
+  "environments": {},
+  "native_workflows": {
+    "blocked_legacy_deploy": ".github/workflows/production-deploy.yml"
+  },
+  "safety": {
+    "external_effects_default": false,
+    "live_email_delivery": false,
+    "live_sms_delivery": false,
+    "live_pstn_dialing": false,
+    "odoo_write": false,
+    "n8n_external_delivery": false,
+    "live_trading": false,
+    "payment_execution": false
+  },
+  "blockers": [
+    "Legacy repository is not a deployment authority; appolon1908-hue/kyqra-crawler owns crawler production deployment.",
+    "Default branch protection must be enabled for evidence admission."
+  ]
+}
