@@ -1,0 +1,82 @@
+name: Manual protected release intent
+
+on:
+  workflow_dispatch:
+    inputs:
+      phase: {description: Normalized portfolio release phase, required: true, type: choice, options: [plan, staging, canary, production]}
+      source_sha: {description: Exact protected default-branch head SHA, required: true, type: string}
+      release_id: {description: Portfolio release identifier, required: true, type: string}
+      candidate_sha256: {description: Exact portfolio candidate file SHA-256, required: true, type: string}
+      images_json: {description: JSON candidate image digest array, required: true, type: string}
+      previous_images_json: {description: JSON rollback image digest array, required: true, type: string}
+      prior_evidence_sha256: {description: Prior evidence digest or zeroes for plan, required: true, type: string}
+      confirmation: {description: Exact phase confirmation, required: true, type: string}
+
+permissions: {actions: read, checks: read, contents: read}
+concurrency:
+  group: manual-release-intent-${{ inputs.phase }}-${{ inputs.release_id }}
+  cancel-in-progress: false
+
+jobs:
+  plan-intent:
+    name: release-intent / exact-head-policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {ref: "${{ inputs.source_sha }}", fetch-depth: 0, persist-credentials: false}
+      - name: Verify legacy evidence-only release contract
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PHASE: ${{ inputs.phase }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          RELEASE_ID: ${{ inputs.release_id }}
+          CANDIDATE_SHA256: ${{ inputs.candidate_sha256 }}
+          IMAGES_JSON: ${{ inputs.images_json }}
+          PREVIOUS_IMAGES_JSON: ${{ inputs.previous_images_json }}
+          PRIOR_EVIDENCE_SHA256: ${{ inputs.prior_evidence_sha256 }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, re, subprocess
+          from pathlib import Path
+          def require(value, message):
+              if not value: raise SystemExit(message)
+          require(os.environ['PHASE']=='plan','legacy Scrapper is evidence-only and supports plan only')
+          require(os.environ['CONFIRMATION']=='PLAN_RELEASE_INTENT','confirmation mismatch')
+          require(re.fullmatch(r'[0-9a-f]{40}',os.environ['SOURCE_SHA']) and os.environ['SOURCE_SHA']!='0'*40,'invalid source SHA')
+          require(re.fullmatch(r'[0-9a-f]{64}',os.environ['CANDIDATE_SHA256']) and os.environ['CANDIDATE_SHA256']!='0'*64,'invalid candidate digest')
+          require(os.environ['PRIOR_EVIDENCE_SHA256']=='0'*64,'plan prior evidence must be zero')
+          require(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{5,127}',os.environ['RELEASE_ID']),'invalid release ID')
+          path=Path('.codestra/production-orchestrator-contract.v1.json'); require(path.is_file() and not path.is_symlink(),'contract missing or unsafe')
+          raw=path.read_bytes(); contract=json.loads(raw)
+          require(contract.get('repository')==os.environ['GITHUB_REPOSITORY'],'repository mismatch')
+          require(contract.get('repository_id')==1329513537,'repository ID mismatch')
+          require(contract.get('default_branch')=='main','default branch mismatch')
+          require(contract.get('deployment_authority') is False,'legacy Scrapper must not become a deployment authority')
+          require(contract.get('supported_phases')==['plan'],'legacy Scrapper must remain plan-only')
+          require(subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()==os.environ['SOURCE_SHA'],'checkout mismatch')
+          branch=json.loads(subprocess.check_output(['gh','api','repos/appolon1908-hue/scrapper/branches/main'],text=True))
+          require(branch.get('protected') is True,'main must be protected before evidence admission')
+          require(branch.get('commit',{}).get('sha')==os.environ['SOURCE_SHA'],'source is not protected main head')
+          required=sorted(set(contract.get('required_checks',[]))|set(branch.get('protection',{}).get('required_status_checks',{}).get('contexts',[])))
+          require(required,'required checks missing')
+          runs=json.loads(subprocess.check_output(['gh','api',f"repos/appolon1908-hue/scrapper/commits/{os.environ['SOURCE_SHA']}/check-runs?per_page=100"],text=True)).get('check_runs',[])
+          latest={}
+          for row in sorted(runs,key=lambda value:value.get('completed_at') or value.get('started_at') or ''):
+              if isinstance(row.get('name'),str): latest[row['name']]=row.get('conclusion')
+          missing=[name for name in required if latest.get(name)!='success']; require(not missing,f'required exact-head checks not successful: {missing}')
+          images=json.loads(os.environ['IMAGES_JSON']); previous=json.loads(os.environ['PREVIOUS_IMAGES_JSON']); image=re.compile(r'^ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+@sha256:[0-9a-f]{64}$')
+          require(isinstance(images,list) and isinstance(previous,list),'images must be arrays')
+          require(len(images)<=1 and len(previous)==len(images),'image count mismatch')
+          require(all(isinstance(value,str) and image.fullmatch(value) for value in images+previous),'image is not digest-qualified')
+          evidence={'schema_version':'codestra.normalized-release-intent.v1','repository':os.environ['GITHUB_REPOSITORY'],'repository_id':1329513537,'role':'migration-evidence','phase':'plan','release_id':os.environ['RELEASE_ID'],'source_sha':os.environ['SOURCE_SHA'],'candidate_sha256':os.environ['CANDIDATE_SHA256'],'prior_evidence_sha256':os.environ['PRIOR_EVIDENCE_SHA256'],'contract_sha256':hashlib.sha256(raw).hexdigest(),'required_checks':required,'candidate_images':images,'previous_images':previous,'deployment_authority':False,'protected_environment':None,'protected_environment_approved':False,'runtime_contacted':False,'production_changed':False,'external_effects_enabled':False,'status':'PASS'}
+          Path(os.environ['RUNNER_TEMP'],'release-intent.json').write_text(json.dumps(evidence,sort_keys=True,indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        with:
+          name: codestra-release-intent-${{ inputs.phase }}-${{ inputs.source_sha }}
+          path: ${{ runner.temp }}/release-intent.json
+          if-no-files-found: error
+          retention-days: 30
